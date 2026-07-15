@@ -1,0 +1,100 @@
+[2m22:12:43[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/bridge-types?page=1&size=10&keyword=[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1193:18)
+    at afterConnectMultiple (node:net:1783:7)
+[2m22:12:44[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/bridge-positions?page=1&size=10&keyword=[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1193:18)
+    at afterConnectMultiple (node:net:1783:7)
+[2m22:12:45[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/bridge-components?page=1&size=10&keyword=[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1193:18)
+    at afterConnectMultiple (node:net:1783:7)
+[2m22:12:45[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/bridge-types?size=20[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1193:18)
+    at afterConnectMultiple (node:net:1783:7)
+[2m22:12:46[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/matrices/initial-items[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1193:18)
+    at afterConnectMultiple (node:net:1783:7)
+[2m22:12:47[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/bridges?page=1&size=10&keyword=[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1193:18)
+    at afterConnectMultiple (node:net:1783:7)
+[2m22:12:47[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/bridge-instance-components?page=1&size=10&keyword=[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1193:18)
+    at afterConnectMultiple (node:net:1783:7)
+[2m22:12:47[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/archive-records?page=1&size=10&keyword=[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1193:18)
+    at afterConnectMultiple (node:net:1783:7)
+[2m22:12:48[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/tasks?page=1&size=10&keyword=&inspection_type=initial[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1193:18)
+    at afterConnectMultiple (node:net:1783:7)
+[2m22:12:48[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/initial-inspections?page=1&size=10&keyword=[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1193:18)
+    at afterConnectMultiple (node:net:1783:7)
+[2m22:12:49[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/initial-inspection-items?page=1&size=10&keyword=[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1193:18)
+    at afterConnectMultiple (node:net:1783:7)
+[2m22:55:16[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/archive-records?page=1&size=10&keyword=[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1193:18)
+    at afterConnectMultiple (node:net:1783:7)
+[2m22:55:17[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/bridge-instance-components?page=1&size=10&keyword=[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1193:18)
+    at afterConnectMultiple (node:net:1783:7)
+[2m22:55:18[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/archive-records?page=1&size=10&keyword=[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1193:18)
+    at afterConnectMultiple (node:net:1783:7)
+[2m22:55:18[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/tasks?page=1&size=10&keyword=&inspection_type=initial[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1193:18)
+    at afterConnectMultiple (node:net:1783:7)
+[2m22:55:19[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/initial-inspections?page=1&size=10&keyword=[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1193:18)
+    at afterConnectMultiple (node:net:1783:7)
+[2m22:55:20[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/tasks?page=1&size=10&keyword=&inspection_type=initial[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1193:18)
+    at afterConnectMultiple (node:net:1783:7)
+[2m22:55:20[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/archive-records?page=1&size=10&keyword=[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1193:18)
+    at afterConnectMultiple (node:net:1783:7)
+[2m22:55:21[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/tasks?page=1&size=10&keyword=&inspection_type=initial[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1193:18)
+    at afterConnectMultiple (node:net:1783:7)
+[2m22:55:21[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/bridge-instance-components?page=1&size=10&keyword=[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1193:18)
+    at afterConnectMultiple (node:net:1783:7)
+[2m22:55:22[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/archive-records?page=1&size=10&keyword=[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1193:18)
+    at afterConnectMultiple (node:net:1783:7)
+[2m22:55:23[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/bridge-instance-components?page=1&size=10&keyword=[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1193:18)
+    at afterConnectMultiple (node:net:1783:7)
+[2m22:55:23[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/archive-records?page=1&size=10&keyword=[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1193:18)
+    at afterConnectMultiple (node:net:1783:7)
+[2m22:55:32[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/dashboard/admin[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1193:18)
+    at afterConnectMultiple (node:net:1783:7)
+[2m22:55:44[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/users?page=1&size=10&keyword=[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1193:18)
+    at afterConnectMultiple (node:net:1783:7)

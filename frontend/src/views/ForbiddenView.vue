@@ -1,0 +1,1 @@
+<template><el-result icon="warning" title="无权访问" sub-title="当前角色没有该页面权限"><template #extra><el-button type="primary" @click="$router.push(home)">返回工作台</el-button></template></el-result></template><script setup>import {useAuthStore} from '../stores/auth';const auth=useAuthStore();const home=auth.homePath</script>

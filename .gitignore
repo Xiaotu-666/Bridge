@@ -1,0 +1,21 @@
+# IDE and local environment
+.idea/
+.vscode/
+.env
+*.iml
+
+# Build output and dependencies
+backend/target/
+frontend/node_modules/
+frontend/dist/
+
+# Runtime files
+backend/*.log
+uploads/
+reports/
+updates/
+
+# Historical source snapshots are not part of active version history
+backup/legacy-flask-src/
+
+# Database snapshots under backup/database are intentionally versioned.

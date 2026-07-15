@@ -1,0 +1,250 @@
+:root {
+  font-family: Inter, "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+  color: #172033;
+  background: #eef2f7;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: #eef2f7;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.sidebar {
+  background: #111827;
+  color: #f8fafc;
+  border-right: 1px solid #1f2937;
+}
+
+.brand {
+  height: 72px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.brand-mark {
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  background: #14b8a6;
+  color: #052e2b;
+}
+
+.brand strong {
+  display: block;
+  font-size: 15px;
+}
+
+.brand span {
+  display: block;
+  color: #94a3b8;
+  font-size: 12px;
+  margin-top: 3px;
+}
+
+.nav-menu {
+  border-right: 0;
+  background: transparent;
+  padding: 12px;
+}
+
+.nav-menu .el-menu-item,
+.nav-menu .el-sub-menu__title {
+  color: #f8fafc;
+  background: #1f2937;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  height: 42px;
+  margin-bottom: 4px;
+}
+
+.nav-menu .el-menu-item.is-active {
+  color: #172033;
+  background: #f8fafc;
+  border-color: #f8fafc;
+  font-weight: 700;
+}
+
+.nav-menu .el-menu-item:hover,
+.nav-menu .el-sub-menu__title:hover {
+  background: #334155;
+  color: #fff;
+}
+
+.nav-menu svg {
+  margin-right: 10px;
+}
+
+.topbar {
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 28px;
+  background: rgba(255, 255, 255, 0.92);
+  border-bottom: 1px solid #d9e1ea;
+  backdrop-filter: blur(10px);
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: 0;
+}
+
+.topbar p {
+  margin: 5px 0 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.user-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.page-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.metric-card,
+.panel,
+.table-panel {
+  background: #fff;
+  border: 1px solid #dbe3ec;
+  border-radius: 8px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+}
+
+.metric-card {
+  padding: 18px;
+}
+
+.metric-card span {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.metric-card strong {
+  display: block;
+  margin-top: 10px;
+  font-size: 28px;
+}
+
+.panel,
+.table-panel {
+  padding: 18px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.toolbar-left,
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+}
+
+.full-row {
+  grid-column: 1 / -1;
+}
+
+.muted {
+  color: #64748b;
+}
+
+.danger-dot,
+.ok-dot,
+.warn-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  margin-right: 6px;
+}
+
+.ok-dot {
+  background: #10b981;
+}
+
+.warn-dot {
+  background: #f59e0b;
+}
+
+.danger-dot {
+  background: #ef4444;
+}
+
+@media (max-width: 900px) {
+  .sidebar {
+    display: none;
+  }
+
+  .topbar {
+    padding: 0 16px;
+  }
+
+  .page-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .page-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+.role-hero { display:flex;align-items:center;justify-content:space-between;gap:24px;padding:24px;margin-bottom:14px;background:linear-gradient(135deg,#111827,#0f766e);border-radius:10px;color:#fff; }
+.role-hero span { color:#99f6e4;font-size:12px;letter-spacing:1.4px; }
+.role-hero h2 { margin:8px 0;font-size:26px; }
+.role-hero p { margin:0;color:#dbeafe; }
+.nav-menu .el-sub-menu.is-active > .el-sub-menu__title { color:#fff; }

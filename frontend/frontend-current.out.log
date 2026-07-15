@@ -1,0 +1,32 @@
+
+> bridge-inspection-frontend@1.0.0 dev
+> vite --host 0.0.0.0 --port 5173
+
+
+  [32m[1mVITE[22m v5.4.21[39m  [2mready in [0m[1m349[22m[2m[0m ms[22m
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m5173[22m/[39m
+  [32m➜[39m  [1mNetwork[22m: [36mhttp://198.18.0.1:[1m5173[22m/[39m
+  [32m➜[39m  [1mNetwork[22m: [36mhttp://10.180.103.251:[1m5173[22m/[39m
+[2m21:04:14[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/views/ResourceView.vue[22m
+[2m21:41:43[22m [36m[1m[vite][22m[39m [32mpage reload [39m[2msrc/router/index.js[22m
+[2m21:43:08[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/App.vue[22m
+[2m21:44:30[22m [36m[1m[vite][22m[39m [32m.env.local changed, restarting server...[39m
+[2m21:44:30[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/views/BridgeMapView.vue, /src/views/BridgeMapView.vue?vue&type=style&index=0&scoped=f1271f93&lang.css[22m
+[2m21:44:30[22m [36m[1m[vite][22m[39m server restarted.
+[2m21:44:57[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/views/ResourceView.vue[22m
+[2m21:46:16[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/views/ResourceView.vue[22m
+[2m21:47:03[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/views/BridgeProfileView.vue, /src/views/BridgeProfileView.vue?vue&type=style&index=0&scoped=1fc699ea&lang.css[22m
+[2m21:47:31[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/App.vue[22m
+[2m21:53:13[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/views/BridgeProfileView.vue[22m
+[2m22:05:06[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/views/BridgeProfileView.vue, /src/views/BridgeProfileView.vue?vue&type=style&index=0&scoped=1fc699ea&lang.css[22m
+[2m22:07:16[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/views/BridgeProfileView.vue[22m
+[2m22:45:37[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/views/BridgeProfileView.vue, /src/views/BridgeProfileView.vue?vue&type=style&index=0&scoped=1fc699ea&lang.css[22m
+[2m22:46:58[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/views/BridgeProfileView.vue[22m
+[2m22:50:38[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/views/ResourceView.vue, /src/views/ResourceView.vue?vue&type=style&index=0&scoped=2397ca61&lang.css[22m
+[2m22:51:40[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/views/ResourceView.vue[22m
+[2m22:59:06[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/views/ResourceView.vue[22m
+[2m23:05:03[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/BridgeDynamicMatrix.vue, /src/components/BridgeDynamicMatrix.vue?vue&type=style&index=0&scoped=749525bf&lang.css[22m
+[2m23:15:33[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/views/BridgeProfileView.vue[22m
+[2m23:16:25[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/BridgeDynamicMatrix.vue[22m
+[2m23:17:34[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/views/BridgeProfileView.vue?vue&type=style&index=0&scoped=1fc699ea&lang.css[22m

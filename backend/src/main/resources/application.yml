@@ -1,0 +1,40 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: bridge-inspection-system
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/bridge_inspection_v2?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:123456}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      minimum-idle: 5
+      maximum-pool-size: 20
+      connection-timeout: 30000
+  flyway:
+    enabled: true
+    locations: classpath:db/v2
+    baseline-on-migrate: true
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 30MB
+
+app:
+  amap:
+    web-service-key: ${AMAP_WEB_SERVICE_KEY:db1656e5951534c1dc5a723a5b5093bd}
+  jwt:
+    secret: ${JWT_SECRET:bridge-inspection-system-jwt-secret-please-change-in-production-2026}
+    expiration-minutes: ${JWT_EXPIRATION_MINUTES:720}
+  files:
+    upload-dir: ${UPLOAD_DIR:../uploads}
+    report-dir: ${REPORT_DIR:../reports}
+    pdf-font-path: ${PDF_FONT_PATH:C:/Windows/Fonts/simfang.ttf}
+  version:
+    repository-root: ${VERSION_REPOSITORY_ROOT:..}
+
+logging:
+  level:
+    com.bridgeinspection: INFO
