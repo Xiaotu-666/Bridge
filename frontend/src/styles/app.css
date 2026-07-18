@@ -32,6 +32,11 @@ select {
   background: #111827;
   color: #f8fafc;
   border-right: 1px solid #1f2937;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 .brand {
@@ -70,6 +75,11 @@ select {
   border-right: 0;
   background: transparent;
   padding: 12px;
+}
+
+.nav-scroll {
+  flex: 1;
+  min-height: 0;
 }
 
 .nav-menu .el-menu-item,

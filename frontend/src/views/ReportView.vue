@@ -41,13 +41,14 @@
     <el-dialog v-model="dialog" title="生成检查报告" width="520px">
       <el-form label-position="top">
         <el-form-item label="任务编号">
-          <el-select v-model="form.taskId" filterable style="width:100%" placeholder="请选择检查任务"><el-option v-for="task in taskOptions" :key="task.task_id" :label="`${task.task_id} · ${task.bridge_code} · ${task.task_status}`" :value="task.task_id"/></el-select>
+          <el-select v-model="form.taskId" filterable style="width:100%" placeholder="请选择检查任务" @change="syncReportType"><el-option v-for="task in taskOptions" :key="task.task_id" :label="`${task.task_id} · ${task.bridge_code} · ${task.inspection_type==='periodic'?'定期检查':'初始检查'} · ${task.task_status}`" :value="task.task_id"/></el-select>
         </el-form-item>
         <el-form-item label="报告类型">
-          <el-select v-model="form.reportType" style="width:100%">
+          <el-select v-model="form.reportType" style="width:100%" disabled>
             <el-option label="初始检查记录表" value="initial_record" />
             <el-option label="定期检查记录表" value="periodic_record" />
           </el-select>
+          <div class="form-tip">报告类型由所选检查任务决定，不能跨检查类型生成。</div>
         </el-form-item>
         <el-form-item label="变更摘要">
           <el-input v-model="form.changeSummary" type="textarea" :rows="3" />
@@ -62,7 +63,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import http from '../api/http'
@@ -72,6 +73,7 @@ const auth = useAuthStore()
 const route = useRoute()
 const canGenerate = computed(() => ['admin', 'engineer'].includes(auth.role))
 const inspectionType=computed(()=>route.path.startsWith('/initial/')?'initial':route.path.startsWith('/periodic/')?'periodic':'')
+const reportTypeFilter=computed(()=>inspectionType.value==='initial'?'initial_record':inspectionType.value==='periodic'?'periodic_record':'')
 const rows = ref([])
 const total = ref(0)
 const page = ref(1)
@@ -81,6 +83,7 @@ const bridgeCode = ref('')
 const dialog = ref(false)
 const taskOptions=ref([])
 const generating = ref(false)
+const selectedTask=computed(()=>taskOptions.value.find(task=>task.task_id===form.taskId))
 const form = reactive({
   taskId: '',
   reportType: 'initial_record',
@@ -88,20 +91,25 @@ const form = reactive({
 })
 
 onMounted(load)
+watch(reportTypeFilter, () => { page.value=1; load() })
 
 async function load() {
-  const data = await http.get('/reports', { params: { page: page.value, size: size.value, keyword: keyword.value, bridgeCode: bridgeCode.value } })
+  const reportType = reportTypeFilter.value
+  const data = await http.get('/reports', { params: { page: page.value, size: size.value, keyword: keyword.value, bridgeCode: bridgeCode.value, report_type: reportType || undefined } })
+  if (reportType !== reportTypeFilter.value) return
   rows.value = data.records
   total.value = data.total
 }
 
-function openGenerate() {
-  loadTasks()
+async function openGenerate() {
+  form.taskId=''
   form.reportType=inspectionType.value==='periodic'?'periodic_record':'initial_record'
   dialog.value = true
+  await loadTasks()
 }
 
-async function loadTasks(){const data=await http.get('/tasks',{params:{page:1,size:100,inspection_type:inspectionType.value||undefined}});taskOptions.value=data.records;if(!form.taskId&&data.records.length)form.taskId=data.records[0].task_id}
+function syncReportType(){form.reportType=selectedTask.value?.inspection_type==='periodic'?'periodic_record':'initial_record'}
+async function loadTasks(){const data=await http.get('/tasks',{params:{page:1,size:100,inspection_type:inspectionType.value||undefined}});taskOptions.value=data.records;if(!form.taskId&&data.records.length)form.taskId=data.records[0].task_id;syncReportType()}
 
 async function generate() {
   if(!form.taskId){ElMessage.warning('请选择检查任务');return}
@@ -133,3 +141,7 @@ async function download(row) {
   URL.revokeObjectURL(url)
 }
 </script>
+
+<style scoped>
+.form-tip{margin-top:6px;color:#64748b;font-size:12px;line-height:1.5}
+</style>

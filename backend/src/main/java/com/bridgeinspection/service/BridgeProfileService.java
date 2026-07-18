@@ -111,8 +111,8 @@ public final class BridgeProfileService {
         result.put("inspectionSummary", inspectionSummary(bridgeCode, initialInspections, periodicInspections));
         result.put("structureDetails", structureDetails(bridgeCode));
         result.put("attachments", jdbcTemplate.queryForList(
-                "SELECT file_id,file_name,storage_path,file_type,file_description,photo_category,upload_time FROM tb_attachment " +
-                        "WHERE bridge_code=? ORDER BY upload_time DESC", bridgeCode));
+                "SELECT file_id,file_name,storage_path,file_type,file_description,photo_category,upload_by,upload_time FROM tb_attachment " +
+                "WHERE bridge_code=? ORDER BY upload_time DESC", bridgeCode));
         return result;
     }
 
@@ -139,11 +139,31 @@ public final class BridgeProfileService {
         return jdbcTemplate.queryForMap("SELECT file_id,file_name,storage_path,file_type,file_description,photo_category,upload_time FROM tb_attachment WHERE storage_path=? ORDER BY file_id DESC LIMIT 1", storagePath);
     }
 
+    public void deletePhoto(String bridgeCode, Long fileId) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT file_id,bridge_code,storage_path,upload_by FROM tb_attachment WHERE file_id=? AND bridge_code=?",
+                fileId, bridgeCode);
+        if (rows.isEmpty()) {
+            throw new BusinessException("照片不存在或不属于当前桥梁");
+        }
+        Map<String, Object> photo = rows.get(0);
+        var user = SecurityUtils.currentUserOrNull();
+        String role = user == null || user.roles().isEmpty() ? "" : user.roles().get(0);
+        String uploaderId = photo.get("upload_by") == null ? "" : String.valueOf(photo.get("upload_by"));
+        if (!"admin".equals(role) && !"engineer".equals(role)
+                && !uploaderId.equals(SecurityUtils.currentUserId())) {
+            throw new BusinessException(403, "检查人员只能删除自己上传的照片");
+        }
+        fileStorageService.delete(String.valueOf(photo.get("storage_path")));
+        jdbcTemplate.update("DELETE FROM tb_attachment WHERE file_id=? AND bridge_code=?", fileId, bridgeCode);
+    }
+
     private Map<String, Object> structureDetails(String bridgeCode) {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("spans", jdbcTemplate.queryForList("SELECT * FROM tb_bridge_span_detail WHERE bridge_code=? ORDER BY span_no", bridgeCode));
-        result.put("structures", jdbcTemplate.queryForList("SELECT * FROM tb_bridge_structure_detail WHERE bridge_code=? ORDER BY structure_group,serial_no", bridgeCode));
-        result.put("cables", jdbcTemplate.queryForList("SELECT * FROM tb_bridge_cable_detail WHERE bridge_code=? ORDER BY cable_type,serial_no", bridgeCode));
+        result.put("structures", jdbcTemplate.queryForList("SELECT * FROM tb_bridge_structure_detail WHERE bridge_code=? ORDER BY structure_group,display_order,serial_no", bridgeCode));
+        result.put("cables", jdbcTemplate.queryForList("SELECT * FROM tb_bridge_cable_detail WHERE bridge_code=? ORDER BY cable_type,display_order,serial_no", bridgeCode));
+        result.put("measurementPoints", jdbcTemplate.queryForList("SELECT * FROM tb_bridge_measurement_point WHERE bridge_code=? ORDER BY point_category,display_order,point_no", bridgeCode));
         return result;
     }
 

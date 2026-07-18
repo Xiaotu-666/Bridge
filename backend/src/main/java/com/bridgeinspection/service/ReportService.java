@@ -83,10 +83,10 @@ public class ReportService {
         renderPdf(html, file);
         jdbcTemplate.update("""
                 INSERT INTO tb_report
-                (report_id,task_id,initial_inspection_code,periodic_inspection_code,report_type,version_no,
+                (report_id,bridge_code,task_id,initial_inspection_code,periodic_inspection_code,report_type,version_no,
                  file_format,file_path,report_status,generation_time,generator_id,change_summary)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
-                """, reportId, taskId, context.initialCode(), context.periodicCode(), reportType, version,
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """, reportId, bridge.get("bridge_code"), taskId, context.initialCode(), context.periodicCode(), reportType, version,
                 "PDF", fileName, "草稿", LocalDateTime.now(), SecurityUtils.currentUserId(), summary);
         return queryOne("SELECT * FROM tb_report WHERE report_id=?", reportId);
     }
@@ -143,29 +143,21 @@ public class ReportService {
 
     private String buildDocument(String reportId, String version, String type, Map<String, Object> bridge,
                                  InspectionContext context) {
-        String title = switch (type) {
-            case "initial_record" -> "桥梁初始检查记录表";
-            case "periodic_record" -> "桥梁定期检查记录表";
-            default -> "桥梁基本状况卡片";
+        String body = switch (type) {
+            case "initial_record" -> officialInitialDocument(bridge, context);
+            case "periodic_record" -> officialPeriodicDocument(bridge, context);
+            default -> officialBridgeCardDocument(bridge);
         };
-        StringBuilder body = new StringBuilder();
-        body.append("<div class='top'><span>公路管理机构名称：").append(esc(bridge.get("road_management_org"))).append("</span>")
-                .append("<span class='number'>专属编号：").append(esc(context.record() == null ? reportId : context.record().get("record_form_no"))).append("</span></div>");
-        body.append("<h1>表 ").append(esc(context.tableCode())).append("　").append(title).append("</h1>");
-        body.append(metaTable(bridge));
-        if ("bridge_card".equals(type)) body.append(bridgeCardSections(bridge));
-        else body.append(inspectionTable(context));
-        body.append("<div class='footer'>报告编号：").append(esc(reportId)).append("　版本：").append(esc(version))
-                .append("　生成时间：").append(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))).append("</div>");
-        return """
-                <!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml" lang="zh-CN"><head><meta charset="UTF-8" />
-                <style>
-                @page{size:A4 landscape;margin:12mm 10mm 14mm}@page{ @bottom-center{content:"第 " counter(page) " 页 / 共 " counter(pages) " 页";font-size:9px;color:#555}}
+        String pageSize = "bridge_card".equals(type) ? "A4 landscape" : "A4 portrait";
+        String css = ("""
+                @page{size:PAGE_SIZE;margin:10mm 9mm 13mm;@bottom-center{content:"第 " counter(page) " 页 / 共 " counter(pages) " 页";font-family:'BridgeCN';font-size:9px;color:#555}}
                 *{box-sizing:border-box}body{font-family:'BridgeCN';font-size:10px;color:#111}h1{text-align:center;font-size:18px;margin:5px 0 10px}
-                .top{border-bottom:1px solid #111;padding:3px 0}.number{float:right}.section{font-size:12px;font-weight:bold;margin:10px 0 4px}
+                .top{border-bottom:1px solid #111;padding:3px 0}.number{float:right}.section{font-size:12px;font-weight:bold;margin:10px 0 4px}.subsection{font-weight:bold;margin:6px 0 3px;color:#333}
                 table{width:100%;border-collapse:collapse;table-layout:fixed}th,td{border:1px solid #222;padding:5px 4px;word-wrap:break-word;vertical-align:middle}th{background:#f2f2f2}
-                .label{font-weight:bold;background:#f7f7f7;width:9%}.value{width:24%}.inspection th{font-size:9px}.inspection td{text-align:center}.footer{margin-top:10px;border-top:1px solid #333;padding-top:5px;color:#444}
-                </style></head><body>""" + body + "</body></html>";
+                .label{font-weight:bold;background:#f7f7f7;width:9%}.value{width:24%}.inspection,.data-table{-fs-table-paginate:paginate}.inspection thead,.data-table thead{display:table-header-group}.inspection th,.data-table th{font-size:9px}.inspection td,.data-table td{text-align:center}.empty{text-align:center;color:#666;padding:8px}.card-section{margin-top:10px}.photo-table td{width:33.33%;vertical-align:top}.photo-table img{display:block;width:100%;height:112px;object-fit:cover}.photo-caption{font-size:8px;line-height:1.4;margin-top:3px}.footer{margin-top:10px;border-top:1px solid #333;padding-top:5px;color:#444}
+                .official-head{text-align:center;border-top:1.5px solid #111;border-bottom:1px solid #111;padding:4px 0 6px}.official-head h1{margin:0;font-size:17px}.official-head p{margin:0 0 2px;font-weight:bold}.official-page{page-break-after:always}.official-page:last-child{page-break-after:auto}.numbered th{font-weight:bold;text-align:left;background:#fafafa}.numbered td{height:27px}.narrative td{height:35px}.test td,.test th{height:108px}.periodic th,.periodic td{text-align:center;padding:3px;font-size:8px}.periodic td{height:23px}.periodic-head th{text-align:center}.main-photo{width:50%;height:150px;object-fit:cover}.photo-label{text-align:center;font-weight:bold}.structure-cell span{display:inline-block;min-width:90px;margin:2px;padding:3px;border:1px solid #aaa}.vertical{writing-mode:vertical-rl;text-orientation:mixed;text-align:center;font-weight:bold;width:22px}
+                """).replace("PAGE_SIZE", pageSize);
+        return "<!DOCTYPE html><html xmlns='http://www.w3.org/1999/xhtml' lang='zh-CN'><head><meta charset='UTF-8' /><style>" + css + "</style></head><body>" + body + "</body></html>";
     }
 
     private String metaTable(Map<String, Object> bridge) {
@@ -177,19 +169,273 @@ public class ReportService {
                 "</td><td class='label'>桥梁类型</td><td>" + esc(bridge.get("bridge_type_name")) + "</td></tr></table>";
     }
 
+    private String officialInitialDocument(Map<String, Object> bridge, InspectionContext context) {
+        Map<String, Object> record = context.record();
+        StringBuilder html = new StringBuilder(officialHead("桥梁初始检查记录表", bridge));
+        html.append("<div class='official-page'><table class='numbered'><tbody>");
+        html.append(numberedTriple(1, "路线编号", value(record, bridge, "route_code"), 2, "路线名称", value(record, bridge, "route_name"), 3, "桥位桩号", value(record, bridge, "pile_number")));
+        html.append(numberedTriple(4, "桥梁编号", value(record, bridge, "bridge_code"), 5, "桥梁名称", value(record, bridge, "bridge_name"), 6, "被跨越道路（通道）名称", value(record, bridge, "crossed_road_name")));
+        html.append(numberedTriple(7, "被跨越道路（通道）桩号", value(record, bridge, "crossed_road_pile"), 8, "桥梁全长(m)", value(record, bridge, "bridge_length"), 9, "最大跨径(m)", value(record, bridge, "maximum_span")));
+        html.append(numberedWide(10, "上、下部结构形式", value(record, bridge, "structure_form")));
+        html.append(numberedWide(11, "桥梁分联及跨径组合", value(record, bridge, "span_combination")));
+        html.append(numberedWide(12, "桥梁施工方法", value(record, bridge, "construction_method")));
+        html.append(numberedWide(13, "新建桥梁在施工过程中的返工、维修或加固情况", value(record, bridge, "construction_rework")));
+        html.append(numberedWide(14, "加固改造后的桥梁、加固改造情况", value(record, bridge, "reinforcement_info")));
+        html.append(numberedWide(15, "档案资料不齐全的桥梁、维修加固情况", value(record, bridge, "missing_archive_drawings")));
+        html.append(numberedTriple(16, "设计单位名称", value(record, bridge, "design_unit"), 17, "施工单位名称", value(record, bridge, "construction_unit"), 18, "监理单位名称", value(record, bridge, "supervision_unit")));
+        html.append(numberedTriple(19, "交工时间（年 月 日）", value(record, bridge, "completion_date"), 20, "初始检查（年 月 日）", value(record, bridge, "inspection_date"), 21, "初始检查时的气候及环境温度", value(record, bridge, "weather_temperature")));
+        html.append(numberedWide(22, "桥面高程", initialItem(context.rows(), "桥面高程")));
+        html.append(numberedWide(23, "拱轴线", initialItem(context.rows(), "拱轴线")));
+        html.append("</tbody></table></div><div class='official-page'><table class='numbered'><tbody>");
+        for (Object[] item : List.of(new Object[]{24,"主缆线形"},new Object[]{25,"墩、台身、锚碇的高程"},new Object[]{26,"墩、台身、索塔倾斜度"},new Object[]{27,"索塔水平变位、高程"},new Object[]{28,"拱桥桥台、悬索桥锚碇水平位移"},new Object[]{29,"悬索桥索夹螺栓紧固力"},new Object[]{30,"水中基础"},new Object[]{31,"斜拉索或吊杆索力"},new Object[]{32,"主要承重构件尺寸"},new Object[]{33,"材质强度"},new Object[]{34,"保护层厚度"},new Object[]{35,"钢管混凝土管内混凝土密实度"})) {
+            html.append(numberedWide((Integer)item[0], String.valueOf(item[1]), initialItem(context.rows(), String.valueOf(item[1]))));
+        }
+        html.append("<tr class='test'><th>36 静载试验结果</th><td>").append(esc(initialItem(context.rows(), "静载试验"))).append("</td></tr>");
+        html.append("<tr class='test'><th>37 动载试验结果</th><td>").append(esc(initialItem(context.rows(), "动载试验"))).append("</td></tr>");
+        html.append("<tr><th>38 记录人</th><td>").append(esc(value(record, bridge, "recorder"))).append("</td><th>39 桥梁工程师</th><td>").append(esc(value(record, bridge, "bridge_engineer"))).append("</td></tr>");
+        html.append("<tr><th>40 桥梁初始检查机构</th><td colspan='3'>").append(esc(value(record, bridge, "inspection_org"))).append("</td></tr>");
+        return html.append("</tbody></table></div>").toString();
+    }
+
+    private String officialPeriodicDocument(Map<String, Object> bridge, InspectionContext context) {
+        Map<String, Object> record = context.record();
+        String title = periodicTitle(context.tableCode());
+        StringBuilder html = new StringBuilder(officialHead(title, bridge));
+        html.append("<div class='official-page'><div class='top'>公路管理机构名称：").append(esc(bridge.get("road_management_org"))).append("</div><table class='numbered'><tbody>");
+        html.append(numberedTriple(1, "路线编号", value(record, bridge, "route_code"), 2, "路线名称", value(record, bridge, "route_name"), 3, "桥位桩号", value(record, bridge, "pile_number")));
+        html.append(numberedTriple(4, "桥梁编号", value(record, bridge, "bridge_code"), 5, "桥梁名称", value(record, bridge, "bridge_name"), 6, "被跨越道路名称", value(record, bridge, "crossed_road_name")));
+        html.append(numberedTriple(7, "桥梁全长(m)", value(record, bridge, "bridge_length"), 8, "主跨结构", value(record, bridge, "main_span_structure"), 9, "最大跨径(m)", value(record, bridge, "maximum_span")));
+        html.append(numberedTriple(10, "管养单位", value(record, bridge, "management_unit"), 11, "建成时间", value(record, bridge, "completion_date"), 12, "上次修复养护时间", value(record, bridge, "last_maintenance_date")));
+        html.append(numberedTriple(13, "上次检查时间", value(record, bridge, "last_inspection_date"), 14, "本次检查时间", value(record, bridge, "inspection_date"), 15, "本次检查时气候及环境温度", value(record, bridge, "weather_temperature")));
+        html.append("</tbody></table><table class='periodic'><thead><tr class='periodic-head'><th rowspan='2'>序号</th><th rowspan='2'>16 部位</th><th rowspan='2'>17 部件名称</th><th rowspan='2'>18 评分</th><th colspan='5'>19 缺损</th><th rowspan='2'>20 养护建议（维修范围、方式、时间）</th><th rowspan='2'>21 是否需特殊检查</th></tr><tr><th>类型</th><th>位置</th><th>范围</th><th>照片</th><th>最不利构件</th></tr></thead><tbody>");
+        int index = 1;
+        for (Map<String, Object> row : context.rows()) {
+            html.append("<tr><td>").append(index++).append("</td><td>").append(esc(row.get("part_name"))).append("</td><td>").append(esc(row.get("component_name"))).append("</td><td>").append(esc(row.get("score"))).append("</td><td>").append(esc(row.get("defect_type"))).append("</td><td>").append(esc(row.get("defect_location"))).append("</td><td>").append(esc(row.get("defect_range"))).append("</td><td>　</td><td>").append(esc(row.get("worst_component"))).append("</td><td>").append(esc(row.get("maintenance_advice"))).append("</td><td>").append(esc(row.get("special_check_required"))).append("</td></tr>");
+        }
+        if (context.rows().isEmpty()) html.append("<tr><td colspan='11' class='empty'>该桥型尚未配置检查部件，不能作为正式定期检查表提交。</td></tr>");
+        html.append("</tbody></table><table class='numbered'><tbody><tr><th>22 桥梁技术状况评定等级</th><td>").append(esc(first(record.get("rating_level_name"), record.get("rating_level_code")))).append("</td><th>23 全桥清洁状况</th><td>").append(esc(record.get("cleanliness"))).append("</td><th>24 预防及修复养护状况</th><td>").append(esc(record.get("maintenance_status"))).append("</td></tr><tr><th>25 记录人</th><td>").append(esc(record.get("recorder"))).append("</td><th>26 负责人</th><td>").append(esc(record.get("principal"))).append("</td><th>27 下次检查时间</th><td>").append(esc(record.get("next_inspection_date"))).append("</td></tr></tbody></table></div>");
+        return html.toString();
+    }
+
+    private String officialBridgeCardDocument(Map<String, Object> bridge) {
+        return officialHead("桥梁基本状况卡片", bridge) + metaTable(bridge) + bridgeCardSections(bridge);
+    }
+
+    private String officialHead(String title, Map<String, Object> bridge) {
+        return "<div class='official-head'><p>（" + esc(bridge.get("road_management_org")) + "）</p><h1>" + esc(title) + "</h1></div>";
+    }
+
+    private String numberedTriple(int aNo, String aLabel, Object aValue, int bNo, String bLabel, Object bValue, int cNo, String cLabel, Object cValue) {
+        return "<tr><th>" + aNo + " " + esc(aLabel) + "</th><td>" + esc(aValue) + "</td><th>" + bNo + " " + esc(bLabel) + "</th><td>" + esc(bValue) + "</td><th>" + cNo + " " + esc(cLabel) + "</th><td>" + esc(cValue) + "</td></tr>";
+    }
+
+    private String numberedWide(int no, String label, Object value) {
+        return "<tr class='narrative'><th>" + no + " " + esc(label) + "</th><td>" + esc(value) + "</td></tr>";
+    }
+
+    private Object value(Map<String, Object> record, Map<String, Object> bridge, String key) {
+        return first(record == null ? null : record.get(key), bridge.get(key));
+    }
+
+    private Object first(Object primary, Object fallback) {
+        return primary == null || string(primary).isBlank() ? fallback : primary;
+    }
+
+    private String initialItem(List<Map<String, Object>> rows, String label) {
+        return rows.stream().filter(row -> string(row.get("item_name")).contains(label) || label.contains(string(row.get("item_name"))))
+                .map(row -> string(row.get("measured_value"))).filter(value -> !value.isBlank()).findFirst().orElse("未录入");
+    }
+
+    private String periodicTitle(String tableCode) {
+        return switch (tableCode) {
+            case "C-1" -> "表 C-1　桥梁定期检查记录表（梁桥）";
+            case "C-2" -> "表 C-2　桥梁定期检查记录表（板拱桥、肋拱桥、箱形拱桥、双曲拱桥）";
+            case "C-3" -> "表 C-3　桥梁定期检查记录表（刚架拱桥、桁架拱桥）";
+            case "C-4" -> "表 C-4　桥梁定期检查记录表（钢-混凝土组合拱桥）";
+            case "C-5" -> "表 C-5　桥梁定期检查记录表（斜拉桥）";
+            case "C-6" -> "表 C-6　桥梁定期检查记录表（悬索桥）";
+            default -> "桥梁定期检查记录表";
+        };
+    }
+
     private String bridgeCardSections(Map<String, Object> bridge) {
-        return "<div class='section'>A 桥梁所处行政区划</div><table><tr><td class='label'>行政区划代码</td><td>" + esc(bridge.get("administrative_code")) +
-                "</td><td class='label'>详细地址</td><td colspan='3'>" + esc(bridge.get("location_address")) + "</td></tr></table>" +
-                "<div class='section'>B 行政识别数据</div><table><tr><td class='label'>功能类型</td><td>" + esc(bridge.get("function_type")) +
-                "</td><td class='label'>设计荷载</td><td>" + esc(bridge.get("design_load")) +
-                "</td><td class='label'>建成时间</td><td>" + esc(bridge.get("built_year")) + "</td></tr>" +
-                "<tr><td class='label'>设计单位</td><td>" + esc(bridge.get("design_unit")) + "</td><td class='label'>施工单位</td><td>" +
-                esc(bridge.get("construction_unit")) + "</td><td class='label'>管养单位</td><td>" + esc(bridge.get("management_unit")) + "</td></tr></table>" +
-                "<div class='section'>C 桥梁技术指标</div><table><tr><td class='label'>桥梁全长(m)</td><td>" + esc(bridge.get("bridge_length")) +
-                "</td><td class='label'>桥面总宽(m)</td><td>" + esc(bridge.get("deck_width")) +
-                "</td><td class='label'>车道宽度(m)</td><td>" + esc(bridge.get("lane_width")) + "</td></tr>" +
-                "<tr><td class='label'>跨径组合</td><td colspan='2'>" + esc(bridge.get("span_combination")) +
-                "</td><td class='label'>结构体系</td><td colspan='2'>" + esc(bridge.get("structural_system")) + "</td></tr></table>";
+        String bridgeCode = string(bridge.get("bridge_code"));
+        List<Map<String, Object>> components = jdbcTemplate.queryForList("""
+                SELECT p.part_name,c.component_name,sc.component_serial,sc.location_desc,sc.material_type,
+                       sc.dimension_spec,sc.quantity,sc.force_value,sc.elevation_displacement,sc.remark
+                FROM tb_bridge_specific_component sc
+                LEFT JOIN tb_part p ON p.part_code=sc.part_code
+                LEFT JOIN tb_component c ON c.component_code=sc.component_code
+                WHERE sc.bridge_code=? AND sc.status=1
+                ORDER BY p.sort_order,c.component_name,sc.component_serial
+                """, bridgeCode);
+        List<Map<String, Object>> spans = jdbcTemplate.queryForList(
+                "SELECT span_no,span_length,structure_form,material_type,location_desc,remark FROM tb_bridge_span_detail WHERE bridge_code=? ORDER BY span_no", bridgeCode);
+        List<Map<String, Object>> measurementPoints = jdbcTemplate.queryForList(
+                "SELECT point_no,point_name,benchmark_elevation,remark FROM tb_bridge_measurement_point WHERE bridge_code=? ORDER BY point_category,display_order,point_no", bridgeCode);
+        List<Map<String, Object>> structures = jdbcTemplate.queryForList(
+                "SELECT structure_group,structure_type,serial_no,form,material_type,quantity,location_desc,remark FROM tb_bridge_structure_detail WHERE bridge_code=? ORDER BY structure_group,display_order,serial_no", bridgeCode);
+        List<Map<String, Object>> cables = jdbcTemplate.queryForList(
+                "SELECT cable_type,serial_no,force_value,material_type,location_desc,remark FROM tb_bridge_cable_detail WHERE bridge_code=? ORDER BY cable_type,display_order,serial_no", bridgeCode);
+        List<Map<String, Object>> archives = jdbcTemplate.queryForList("""
+                SELECT ai.archive_item_name,ar.completeness_status,ar.description
+                FROM tb_bridge_archive_record ar
+                LEFT JOIN tb_archive_item ai ON ai.archive_item_code=ar.archive_item_code
+                WHERE ar.bridge_code=? ORDER BY ai.archive_item_name
+                """, bridgeCode);
+        List<Map<String, Object>> evaluations = jdbcTemplate.queryForList("""
+                SELECT eh.evaluation_date,cc.check_category_name,eh.rating_result,eh.special_conclusion,
+                       eh.treatment_strategy,eh.next_check_date
+                FROM tb_evaluation_history eh
+                LEFT JOIN tb_check_category cc ON cc.check_category_code=eh.check_category_code
+                WHERE eh.bridge_code=? ORDER BY eh.evaluation_date ASC, CASE WHEN cc.check_category_name LIKE '%初始%' THEN 0 ELSE 1 END
+                """, bridgeCode);
+        List<Map<String, Object>> photos = jdbcTemplate.queryForList("""
+                SELECT file_name,storage_path,file_type,file_description,photo_category,upload_time
+                FROM tb_attachment WHERE bridge_code=? ORDER BY upload_time DESC
+                """, bridgeCode);
+
+        StringBuilder html = new StringBuilder();
+        html.append(cardSection("A", "桥梁所处行政区划", keyValueTable(
+                "行政区划代码", bridge.get("administrative_code"), "桥梁详细地址", bridge.get("location_address"),
+                "经纬度", coordinate(bridge))));
+        html.append(cardSection("B", "行政识别数据", keyValueTable(
+                "路线编号", bridge.get("route_code"), "路线名称", bridge.get("route_name"), "路线等级", bridge.get("route_grade"),
+                "桥梁编号", bridge.get("bridge_code"), "桥梁名称", bridge.get("bridge_name"), "桥位桩号", bridge.get("pile_number"),
+                "功能类型", bridge.get("function_type"), "被跨道路（通道）", bridge.get("crossed_road_name"), "被跨道路桩号", bridge.get("crossed_road_pile"),
+                "养护等级", bridge.get("maintenance_level"), "设计荷载", bridge.get("design_load"), "桥梁坡度", bridge.get("bridge_slope"),
+                "平曲线半径", bridge.get("curve_radius"), "建成年份", bridge.get("built_year"), "设计单位", bridge.get("design_unit"),
+                "施工单位", bridge.get("construction_unit"), "监理单位", bridge.get("supervision_unit"), "业主单位", bridge.get("owner_unit"),
+                "管养单位", bridge.get("management_unit"))));
+        html.append(cardSection("C", "桥梁技术指标", keyValueTable(
+                "桥梁全长（m）", bridge.get("bridge_length"), "桥面总宽（m）", bridge.get("deck_width"), "车道宽度（m）", bridge.get("lane_width"),
+                "人行道宽度（m）", bridge.get("sidewalk_width"), "护栏/防撞墙高（m）", bridge.get("barrier_height"), "中央分隔带宽（m）", bridge.get("median_width"),
+                "桥面标准净空", bridge.get("standard_clearance"), "桥面实际净空", bridge.get("actual_clearance"), "通航等级及标准净空", bridge.get("navigation_standard"),
+                "桥下实际净空", bridge.get("navigation_actual"), "引道总宽（m）", bridge.get("approach_width"), "引道线形/曲线半径", bridge.get("approach_alignment"),
+                "设计洪水频率及水位", bridge.get("design_flood"), "历史洪水位", bridge.get("historical_flood"), "地震动峰值加速度", bridge.get("seismic_coefficient"))));
+
+        StringBuilder structure = new StringBuilder();
+        structure.append(subsection("34 桥面高程（根据测点设置列数）")).append(dataTable(
+                new String[]{"测点编号", "测点名称", "基准高程（m）", "说明"}, measurementPoints,
+                "point_no", "point_name", "benchmark_elevation", "remark"));
+        structure.append(subsection("35 桥梁分孔（根据孔数设置列数）")).append(dataTable(
+                new String[]{"孔号", "跨径（m）", "结构形式", "材料", "位置", "备注"}, spans,
+                "span_no", "span_length", "structure_form", "material_type", "location_desc", "remark"));
+        structure.append(subsection("36—41 上部结构形式与材料（按种类设置列数）")).append(dataTable(
+                new String[]{"分组", "结构类型", "编号", "形式", "材料", "数量", "位置", "备注"}, structures,
+                "structure_group", "structure_type", "serial_no", "form", "material_type", "quantity", "location_desc", "remark"));
+        structure.append(subsection("42—44 斜拉索、吊杆、系杆（按索数设置列数，含索力）")).append(dataTable(
+                new String[]{"类型", "编号", "索力/内力", "材料", "位置", "备注"}, cables,
+                "cable_type", "serial_no", "force_value", "material_type", "location_desc", "remark"));
+        structure.append(subsection("45—59 桥面系、下部结构、基础、支座及附属设施")).append(dataTable(
+                new String[]{"部位", "部件", "编号", "位置", "材料", "尺寸/规格", "数量", "备注"}, components,
+                "part_name", "component_name", "component_serial", "location_desc", "material_type", "dimension_spec", "quantity", "remark"));
+        html.append(cardSection("D", "桥梁结构信息", structure.toString()));
+        html.append(cardSection("E（60—71）", "桥梁档案资料", dataTable(
+                new String[]{"档案资料项", "齐全状态", "说明"}, archives,
+                "archive_item_name", "completeness_status", "description")));
+        html.append(cardSection("F（72—76）", "桥梁检测评定时间", dataTable(
+                new String[]{"评定时间", "检测类别", "评定结果", "特殊检查结论", "下次检测时间"}, evaluations,
+                "evaluation_date", "check_category_name", "rating_result", "special_conclusion", "next_check_date")));
+        html.append(cardSection("H（88）", "需要说明的事项", keyValueTable(
+                "说明", bridge.get("notes"), "公路管理机构", bridge.get("road_management_org"), "管养单位", bridge.get("management_unit"),
+                "桥梁工程师", bridge.get("bridge_engineer"), "填卡人", bridge.get("card_filler"), "填卡日期", bridge.get("card_date"))));
+        html.append(cardSection("I（89—93）", "桥梁总体照片及桥梁正面照片", mainPhotoTable(photos, bridge)));
+        return html.toString();
+    }
+
+    private String cardSection(String code, String title, String content) {
+        return "<div class='card-section'><div class='section'>" + esc(code) + " " + esc(title) + "</div>" + content + "</div>";
+    }
+
+    private String subsection(String title) {
+        return "<div class='subsection'>" + esc(title) + "</div>";
+    }
+
+    private String keyValueTable(Object... cells) {
+        StringBuilder html = new StringBuilder("<table class='info-table'><tbody>");
+        for (int offset = 0; offset < cells.length; offset += 6) {
+            html.append("<tr>");
+            for (int column = 0; column < 3; column++) {
+                int index = offset + column * 2;
+                if (index + 1 < cells.length) {
+                    html.append("<td class='label'>").append(esc(cells[index])).append("</td><td>").append(esc(cells[index + 1])).append("</td>");
+                } else {
+                    html.append("<td class='label'>　</td><td>　</td>");
+                }
+            }
+            html.append("</tr>");
+        }
+        return html.append("</tbody></table>").toString();
+    }
+
+    private String dataTable(String[] headers, List<Map<String, Object>> rows, String... keys) {
+        StringBuilder html = new StringBuilder("<table class='data-table'><thead><tr>");
+        for (String header : headers) html.append("<th>").append(esc(header)).append("</th>");
+        html.append("</tr></thead><tbody>");
+        if (rows.isEmpty()) {
+            html.append("<tr><td class='empty' colspan='").append(headers.length).append("'>暂无记录</td></tr>");
+        } else {
+            for (Map<String, Object> row : rows) {
+                html.append("<tr>");
+                for (String key : keys) html.append("<td>").append(esc(row.get(key))).append("</td>");
+                html.append("</tr>");
+            }
+        }
+        return html.append("</tbody></table>").toString();
+    }
+
+    private String photoTable(List<Map<String, Object>> rows) {
+        StringBuilder html = new StringBuilder("<table class='photo-table'><tbody><tr>");
+        int count = 0;
+        for (Map<String, Object> row : rows) {
+            String source = localImageSource(row);
+            if (source.isBlank()) continue;
+            html.append("<td><img src='").append(esc(source)).append("' alt='").append(esc(row.get("file_description"))).append("'/>")
+                    .append("<div class='photo-caption'>").append(esc(row.get("photo_category"))).append(" · ")
+                    .append(esc(row.get("file_description"))).append("<br/>").append(esc(row.get("file_name"))).append("</div></td>");
+            count++;
+            if (count % 3 == 0 && count < rows.size()) html.append("</tr><tr>");
+        }
+        if (count == 0) return "<table><tbody><tr><td class='empty'>暂无可用照片</td></tr></tbody></table>";
+        while (count % 3 != 0) {
+            html.append("<td>　</td>");
+            count++;
+        }
+        return html.append("</tr></tbody></table>").toString();
+    }
+
+    private String mainPhotoTable(List<Map<String, Object>> rows, Map<String, Object> bridge) {
+        StringBuilder html = new StringBuilder("<table class='photo-table'><tbody><tr>");
+        for (String category : List.of("overall", "front")) {
+            Map<String, Object> photo = rows.stream().filter(row -> category.equals(string(row.get("photo_category"))))
+                    .filter(row -> !localImageSource(row).isBlank()).findFirst().orElse(null);
+            String label = "overall".equals(category) ? "89 桥梁总体照片" : "90 桥梁正面照片";
+            html.append("<td><div class='photo-label'>").append(label).append("</div>");
+            if (photo == null) html.append("<div class='empty'>未录入照片</div>");
+            else html.append("<img class='main-photo' src='").append(esc(localImageSource(photo))).append("' alt='").append(esc(photo.get("file_description"))).append("'/><div class='photo-caption'>").append(esc(photo.get("file_description"))).append("</div>");
+            html.append("</td>");
+        }
+        html.append("</tr><tr><td>91 桥梁工程师：").append(esc(bridge.get("bridge_engineer"))).append("</td><td>92 填卡人：")
+                .append(esc(bridge.get("card_filler"))).append("　93 填卡日期：").append(esc(bridge.get("card_date"))).append("</td></tr>");
+        return html.append("</tbody></table>").toString();
+    }
+
+    private String coordinate(Map<String, Object> bridge) {
+        Object longitude = bridge.get("longitude"), latitude = bridge.get("latitude");
+        return longitude == null || latitude == null ? "" : longitude + ", " + latitude;
+    }
+
+    private String localImageSource(Map<String, Object> row) {
+        String fileType = string(row.get("file_type")).toLowerCase();
+        String fileName = string(row.get("file_name")).toLowerCase();
+        if (!(fileType.startsWith("image/") || fileName.endsWith(".jpg") || fileName.endsWith(".jpeg") || fileName.endsWith(".png"))) return "";
+        try {
+            Path target = uploadDir.resolve(string(row.get("storage_path"))).normalize();
+            return target.startsWith(uploadDir) && Files.isRegularFile(target) ? target.toUri().toString() : "";
+        } catch (Exception ignored) {
+            return "";
+        }
     }
 
     private String inspectionTable(InspectionContext context) {
@@ -239,14 +485,21 @@ public class ReportService {
         return switch (bridgeType) {
             case "beam" -> "C-1"; case "arch" -> "C-2"; case "rigid_arch" -> "C-3";
             case "composite_arch" -> "C-4"; case "cable_stayed" -> "C-5"; case "suspension" -> "C-6";
-            default -> "C-7";
+            default -> throw new BusinessException("桥梁类型待核验，不能生成正式定期检查表");
         };
     }
 
     private String normalizeType(String requested, String taskType) {
         if ("bridge_card".equals(requested)) return "bridge_card";
-        if ("initial_record".equals(requested) || "initial".equals(taskType)) return "initial_record";
-        return "periodic_record";
+        String expected = switch (taskType) {
+            case "initial" -> "initial_record";
+            case "periodic" -> "periodic_record";
+            default -> throw new BusinessException("检查任务类型无效，无法生成报告");
+        };
+        if (requested != null && !requested.isBlank() && !"comprehensive".equals(requested) && !expected.equals(requested)) {
+            throw new BusinessException("报告类型与所选检查任务不一致，请重新选择任务");
+        }
+        return expected;
     }
 
     private String nextVersion(String taskId, String reportType) {

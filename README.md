@@ -1,4 +1,4 @@
-# 公路桥梁初始检查信息系统
+# 公路桥梁检查信息系统
 
 本系统面向桥梁建档、初始检查和定期检查，不包含独立的养护处治业务系统。
 
@@ -17,7 +17,7 @@ cd bridge-inspection-system/backend
 mvn.cmd -DskipTests package
 java -jar target/bridge-inspection-backend-1.0.0.jar
 
-cd ../frontend
+cd bridge-inspection-system/frontend
 npm.cmd run dev
 ```
 

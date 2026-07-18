@@ -54,7 +54,96 @@ public class VersionControlService {
         result.put("changed_files", initialized ? changedFiles() : List.of());
         result.put("latest_commit", initialized ? latestCommit() : null);
         result.put("commits", initialized ? commits() : List.of());
+        result.put("remote_url", initialized ? remoteUrl() : "");
+        result.put("current_version", currentVersion());
+        result.put("system_versions", systemVersions());
         result.put("backups", backups());
+        return result;
+    }
+
+    public synchronized Map<String, Object> checkGithubUpdates() {
+        initialize();
+        String remote = remoteUrl();
+        if (remote.isBlank()) throw new BusinessException("尚未配置 GitHub 远端仓库");
+        String installedVersion = currentVersion();
+        String installedCommit = currentVersionCommit();
+        if (installedCommit.isBlank()) {
+            installedCommit = runGit(false, "rev-parse", "HEAD").output().trim();
+            jdbcTemplate.update("UPDATE tb_system_version SET git_commit=?,build_time=COALESCE(build_time,NOW()),repository_url=? WHERE id=(SELECT id FROM (SELECT id FROM tb_system_version ORDER BY id DESC LIMIT 1) current_version)",
+                    installedCommit, canonicalRepositoryUrl(remote));
+        }
+        runGit(false, "fetch", "origin", "--prune");
+        String currentBranch = branch();
+        GitResult remoteHead = runGit(true, "rev-parse", "--verify", "origin/" + currentBranch);
+        if (remoteHead.exitCode() != 0) throw new BusinessException("GitHub 上不存在分支 " + currentBranch);
+        String remoteCommit = remoteHead.output().trim();
+        int ahead = revisionCount("origin/" + currentBranch + "..HEAD");
+        int behind = revisionCount("HEAD..origin/" + currentBranch);
+        GitResult latest = runGit(true, "log", "-1", "--pretty=format:%h%x1f%s%x1f%aI", "origin/" + currentBranch);
+        String[] fields = latest.output().split("\\u001f", -1);
+        boolean updateAvailable = !remoteCommit.equals(installedCommit);
+        String availableVersion = updateAvailable ? nextMinorVersion(installedVersion) : installedVersion;
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("remote_url", canonicalRepositoryUrl(remote));
+        result.put("branch", currentBranch);
+        result.put("ahead", ahead);
+        result.put("behind", behind);
+        result.put("current_version", installedVersion);
+        result.put("available_version", availableVersion);
+        result.put("update_available", updateAvailable);
+        result.put("remote_hash", remoteCommit);
+        result.put("remote_commit", fields.length > 0 ? fields[0] : "");
+        result.put("remote_message", fields.length > 1 ? fields[1] : "");
+        result.put("remote_time", fields.length > 2 ? fields[2] : "");
+        result.put("message", updateAvailable ? "发现 " + availableVersion + " 更新" : "当前已是最新版本 " + installedVersion);
+        return result;
+    }
+
+    @Transactional
+    public synchronized Map<String, Object> applyGithubUpdate() {
+        Map<String, Object> update = checkGithubUpdates();
+        if (!Boolean.TRUE.equals(update.get("update_available"))) return update;
+        assertCleanRepository();
+        String targetVersion = String.valueOf(update.get("available_version"));
+        String targetCommit = String.valueOf(update.get("remote_hash"));
+        String safetyBranch = createSafetyBranch("update-safety");
+        Map<String, Object> backup = performDatabaseBackup("更新到 " + targetVersion + " 前自动备份");
+        runGit(false, "reset", "--hard", targetCommit);
+        registerSystemVersion(targetVersion, targetCommit, String.valueOf(update.get("remote_url")));
+        Map<String, Object> result = new LinkedHashMap<>(update);
+        result.put("current_version", targetVersion);
+        result.put("update_available", false);
+        result.put("safety_branch", safetyBranch);
+        result.put("backup_id", backup.get("backup_id"));
+        result.put("message", "已更新到 " + targetVersion + "，请重启系统使新版本生效");
+        return result;
+    }
+
+    @Transactional
+    public synchronized Map<String, Object> rollbackVersion(String requestedVersion) {
+        String version = normalizeVersion(requestedVersion);
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT version_no,git_commit,repository_url FROM tb_system_version
+                WHERE version_no=? AND git_commit IS NOT NULL AND git_commit<>''
+                ORDER BY id DESC LIMIT 1
+                """, version);
+        if (rows.isEmpty()) throw new BusinessException("没有找到 " + version + " 的可回溯代码版本");
+        if (version.equals(currentVersion())) throw new BusinessException("当前已经是 " + version);
+        String targetCommit = String.valueOf(rows.get(0).get("git_commit"));
+        GitResult commit = runGit(true, "cat-file", "-e", targetCommit + "^{commit}");
+        if (commit.exitCode() != 0) throw new BusinessException(version + " 对应的 Git 提交不存在，无法回溯");
+        assertCleanRepository();
+        String safetyBranch = createSafetyBranch("rollback-safety");
+        Map<String, Object> backup = performDatabaseBackup("回溯到 " + version + " 前自动备份");
+        runGit(false, "reset", "--hard", targetCommit);
+        registerSystemVersion(version, targetCommit,
+                canonicalRepositoryUrl(String.valueOf(rows.get(0).get("repository_url"))));
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("current_version", version);
+        result.put("git_commit", targetCommit);
+        result.put("safety_branch", safetyBranch);
+        result.put("backup_id", backup.get("backup_id"));
+        result.put("message", "已回溯到 " + version + "，请重启系统使历史版本生效");
         return result;
     }
 
@@ -78,7 +167,7 @@ public class VersionControlService {
                 : requestedMessage.trim();
         if (message.length() > 300) throw new BusinessException("版本说明不能超过300个字符");
 
-        Map<String, Object> backup = createDatabaseBackup(message);
+        Map<String, Object> backup = performDatabaseBackup(message);
         long backupId = ((Number) backup.get("backup_id")).longValue();
         try {
             runGit(false, "add", "--all", "--", ".");
@@ -113,7 +202,34 @@ public class VersionControlService {
         return new PathResource(file);
     }
 
-    private Map<String, Object> createDatabaseBackup(String versionMessage) {
+    @Transactional
+    public synchronized Map<String, Object> deleteBackup(long backupId) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT file_name,file_path FROM tb_backup_record WHERE backup_id=?", backupId);
+        if (rows.isEmpty()) throw new BusinessException("数据库备份记录不存在");
+        Map<String, Object> row = rows.get(0);
+        Path backupRoot = repositoryRoot.resolve("backup").resolve("database").normalize();
+        Path file = repositoryRoot.resolve(String.valueOf(row.get("file_path"))).normalize();
+        if (!file.startsWith(backupRoot)) throw new BusinessException("备份文件路径不合法，拒绝删除");
+        try {
+            Files.deleteIfExists(file);
+        } catch (IOException ex) {
+            throw new BusinessException("删除数据库备份文件失败：" + ex.getMessage());
+        }
+        jdbcTemplate.update("DELETE FROM tb_backup_record WHERE backup_id=?", backupId);
+        return Map.of("backup_id", backupId, "file_name", String.valueOf(row.get("file_name")));
+    }
+
+    @Transactional
+    public synchronized Map<String, Object> createDatabaseBackup(String requestedMessage) {
+        String message = requestedMessage == null || requestedMessage.isBlank()
+                ? "数据库备份 " + LocalDateTime.now().format(MESSAGE_TIME)
+                : requestedMessage.trim();
+        if (message.length() > 300) throw new BusinessException("备份说明不能超过300个字符");
+        return performDatabaseBackup(message);
+    }
+
+    private Map<String, Object> performDatabaseBackup(String versionMessage) {
         Path backupDirectory = repositoryRoot.resolve("backup").resolve("database");
         String fileName = "bridge_inspection_" + LocalDateTime.now().format(FILE_TIME) + ".sql";
         Path file = backupDirectory.resolve(fileName).normalize();
@@ -212,6 +328,69 @@ public class VersionControlService {
         return "'" + text + "'";
     }
 
+    private String currentVersion() {
+        List<String> versions = jdbcTemplate.query(
+                "SELECT version_no FROM tb_system_version ORDER BY id DESC LIMIT 1",
+                (rs, rowNum) -> rs.getString(1));
+        return versions.isEmpty() ? "V1.0" : normalizeVersion(versions.get(0));
+    }
+
+    private String currentVersionCommit() {
+        List<String> commits = jdbcTemplate.query(
+                "SELECT COALESCE(git_commit,'') FROM tb_system_version ORDER BY id DESC LIMIT 1",
+                (rs, rowNum) -> rs.getString(1));
+        return commits.isEmpty() || commits.get(0) == null ? "" : commits.get(0);
+    }
+
+    private List<Map<String, Object>> systemVersions() {
+        List<Map<String, Object>> versions = jdbcTemplate.queryForList("""
+                SELECT id,version_no,git_commit,build_time,repository_url,create_time
+                FROM tb_system_version ORDER BY id DESC LIMIT 20
+                """);
+        versions.forEach(row -> row.put("version_no", normalizeVersion(String.valueOf(row.get("version_no")))));
+        return versions;
+    }
+
+    private String normalizeVersion(String value) {
+        String version = value == null ? "" : value.trim().toUpperCase();
+        if (version.startsWith("V")) version = version.substring(1);
+        String[] parts = version.split("\\.");
+        String major = parts.length > 0 && parts[0].matches("\\d+") ? parts[0] : "1";
+        String minor = parts.length > 1 && parts[1].matches("\\d+") ? parts[1] : "0";
+        return "V" + major + "." + minor;
+    }
+
+    private String nextMinorVersion(String value) {
+        String[] parts = normalizeVersion(value).substring(1).split("\\.");
+        return "V" + parts[0] + "." + (Integer.parseInt(parts[1]) + 1);
+    }
+
+    private String canonicalRepositoryUrl(String value) {
+        String remote = value == null || value.isBlank()
+                ? "https://github.com/Xiaotu-666/Bridge"
+                : value.trim();
+        return remote.endsWith(".git") ? remote.substring(0, remote.length() - 4) : remote;
+    }
+
+    private void assertCleanRepository() {
+        if (!changedFiles().isEmpty()) {
+            throw new BusinessException("当前代码目录存在未保存修改，请先提交或备份代码后再执行版本更新或回溯");
+        }
+    }
+
+    private String createSafetyBranch(String prefix) {
+        String name = prefix + "-" + LocalDateTime.now().format(FILE_TIME);
+        runGit(false, "branch", name, "HEAD");
+        return name;
+    }
+
+    private void registerSystemVersion(String version, String commit, String repositoryUrl) {
+        jdbcTemplate.update("""
+                INSERT INTO tb_system_version(version_no,git_commit,build_time,repository_url)
+                VALUES (?,?,NOW(),?)
+                """, normalizeVersion(version), commit, canonicalRepositoryUrl(repositoryUrl));
+    }
+
     private List<Map<String, Object>> backups() {
         return jdbcTemplate.queryForList("""
                 SELECT b.backup_id,b.backup_type,b.version_message,b.file_name,b.file_path,b.file_size,b.sha256,
@@ -255,6 +434,17 @@ public class VersionControlService {
         GitResult result = runGit(true, "branch", "--show-current");
         String branch = result.output().trim();
         return branch.isBlank() ? "main" : branch;
+    }
+
+    private String remoteUrl() {
+        GitResult result = runGit(true, "remote", "get-url", "origin");
+        return result.exitCode() == 0 ? result.output().trim() : "";
+    }
+
+    private int revisionCount(String range) {
+        GitResult result = runGit(true, "rev-list", "--count", range);
+        try { return Integer.parseInt(result.output().trim()); }
+        catch (Exception ex) { return 0; }
     }
 
     private boolean isInitialized() {

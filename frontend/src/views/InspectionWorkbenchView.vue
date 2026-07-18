@@ -80,7 +80,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import http from '../api/http'
@@ -102,9 +102,20 @@ const recordStatus = computed(() => record.status === 'pending' ? '待审核' : 
 const taskLocked = computed(() => ['已完成','已审核','已取消'].includes(task.value?.task_status))
 
 onMounted(loadTasks)
+watch(() => props.inspectionType, () => {
+  selectedTaskId.value = ''
+  task.value = null
+  rows.value = []
+  Object.keys(bridge).forEach(key => delete bridge[key])
+  Object.keys(record).forEach(key => delete record[key])
+  loadTasks()
+})
 
 async function loadTasks() {
-  tasks.value = await http.get(`/inspection-workbench/${props.inspectionType}/tasks`)
+  const type = props.inspectionType
+  const loadedTasks = await http.get(`/inspection-workbench/${type}/tasks`)
+  if (type !== props.inspectionType) return
+  tasks.value = loadedTasks
   const requestedTaskId = String(route.query.taskId || '')
   if (requestedTaskId && tasks.value.some(item => item.task_id === requestedTaskId)) selectedTaskId.value = requestedTaskId
   else if (!tasks.value.some(item => item.task_id === selectedTaskId.value)) selectedTaskId.value = tasks.value[0]?.task_id || ''
@@ -114,7 +125,9 @@ async function loadTasks() {
 
 async function loadTask(taskId) {
   if (!taskId) { task.value = null; rows.value = []; return }
-  const data = await http.get(`/inspection-workbench/${props.inspectionType}/tasks/${taskId}`)
+  const type = props.inspectionType
+  const data = await http.get(`/inspection-workbench/${type}/tasks/${taskId}`)
+  if (type !== props.inspectionType) return
   task.value = data.task
   Object.keys(bridge).forEach(key => delete bridge[key]); Object.assign(bridge, data.bridge || {})
   Object.keys(record).forEach(key => delete record[key]); Object.assign(record, data.record || {})

@@ -4,6 +4,7 @@ import com.bridgeinspection.common.ApiResponse;
 import com.bridgeinspection.service.BridgeProfileService;
 import com.bridgeinspection.service.BridgeStructureService;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -48,6 +49,13 @@ public class BridgeProfileController {
             @RequestParam(value = "category", required = false) String category
     ) {
         return ApiResponse.ok(bridgeProfileService.uploadPhoto(bridgeCode, file, description, category));
+    }
+
+    @DeleteMapping("/{bridgeCode}/photos/{fileId}")
+    @PreAuthorize("hasAnyRole('admin','engineer','inspector')")
+    public ApiResponse<Void> deletePhoto(@PathVariable String bridgeCode, @PathVariable Long fileId) {
+        bridgeProfileService.deletePhoto(bridgeCode, fileId);
+        return ApiResponse.ok(null);
     }
 
     @GetMapping("/{bridgeCode}")

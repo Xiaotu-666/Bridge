@@ -10,6 +10,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -51,6 +52,50 @@ public class VersionControlController {
         Map<String, Object> result = versionControlService.createVersion(message);
         logService.log(request, "version-control", "创建版本", ".git", String.valueOf(result.get("short_hash")),
                 "创建Git版本并包含数据库备份", true);
+        return ApiResponse.ok(result);
+    }
+
+    @PostMapping("/github/check")
+    public ApiResponse<Map<String, Object>> checkGithubUpdates(HttpServletRequest request) {
+        Map<String, Object> result = versionControlService.checkGithubUpdates();
+        logService.log(request, "version-control", "检查更新", ".git", String.valueOf(result.get("branch")),
+                "检查 GitHub 更新：" + result.get("message"), true);
+        return ApiResponse.ok(result);
+    }
+
+    @PostMapping("/github/update")
+    public ApiResponse<Map<String, Object>> applyGithubUpdate(HttpServletRequest request) {
+        Map<String, Object> result = versionControlService.applyGithubUpdate();
+        logService.log(request, "version-control", "版本更新", ".git", String.valueOf(result.get("current_version")),
+                String.valueOf(result.get("message")), true);
+        return ApiResponse.ok(result);
+    }
+
+    @PostMapping("/versions/{versionNo}/rollback")
+    public ApiResponse<Map<String, Object>> rollbackVersion(@PathVariable String versionNo,
+                                                            HttpServletRequest request) {
+        Map<String, Object> result = versionControlService.rollbackVersion(versionNo);
+        logService.log(request, "version-control", "版本回溯", ".git", versionNo,
+                String.valueOf(result.get("message")), true);
+        return ApiResponse.ok(result);
+    }
+
+    @PostMapping("/backups")
+    public ApiResponse<Map<String, Object>> createBackup(@RequestBody(required = false) Map<String, String> body,
+                                                         HttpServletRequest request) {
+        String message = body == null ? null : body.get("message");
+        Map<String, Object> result = versionControlService.createDatabaseBackup(message);
+        logService.log(request, "version-control", "数据库备份", "tb_backup_record",
+                String.valueOf(result.get("backup_id")), "创建独立数据库备份", true);
+        return ApiResponse.ok(result);
+    }
+
+    @DeleteMapping("/backups/{backupId}")
+    public ApiResponse<Map<String, Object>> deleteBackup(@PathVariable long backupId,
+                                                         HttpServletRequest request) {
+        Map<String, Object> result = versionControlService.deleteBackup(backupId);
+        logService.log(request, "version-control", "删除备份", "tb_backup_record", String.valueOf(backupId),
+                "删除数据库备份：" + result.get("file_name"), true);
         return ApiResponse.ok(result);
     }
 

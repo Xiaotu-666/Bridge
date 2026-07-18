@@ -3,7 +3,7 @@
   <el-container v-else class="app-shell">
     <el-aside class="sidebar" width="252px">
       <div class="brand"><div class="brand-mark">B</div><div><strong>Bridge Inspect</strong><span>{{ roleName }}门户</span></div></div>
-      <el-scrollbar>
+      <el-scrollbar class="nav-scroll">
         <el-menu router :default-active="$route.path" class="nav-menu">
           <template v-for="group in menus" :key="group.key">
             <el-menu-item v-if="!group.children" :index="group.path"><component :is="group.icon" :size="18"/><span>{{ group.label }}</span></el-menu-item>
@@ -34,11 +34,11 @@ const auth = useAuthStore()
 const roleNames = { admin: '系统管理员', engineer: '桥梁工程师', inspector: '检查人员', reviewer: '审核人员', viewer: '查询人员' }
 const roleName = computed(() => roleNames[auth.role] || '用户')
 const definitions = {
-  admin: [home(), workbench(), base(), archive(), initial(), periodic(), review(), query(), system()],
-  engineer: [home(), base(), archive(), initial(), periodic(), query()],
-  inspector: [home(), workbench(), initial(), periodic(), query()],
-  reviewer: [home(), review(), query()],
-  viewer: [home(), query()]
+  admin: [home('系统管理员工作台'), base(), archive(), initial(), periodic(), workbench(), review(), query(), system()],
+  engineer: [home('桥梁工程师工作台'), base(), archive(), initial(), periodic(), query()],
+  inspector: [home('我的检查工作台'), workbench()],
+  reviewer: [home('审核归档工作台'), review()],
+  viewer: [home('查询统计工作台'), query()]
 }
 const menus = computed(() => definitions[auth.role] || [home()])
 const currentLabel = computed(() => {
@@ -47,10 +47,10 @@ const currentLabel = computed(() => {
     const item = group.children?.find(child => child.path === route.path)
     if (item) return item.label
   }
-  return '公路桥梁初始检查信息系统'
+  return '公路桥梁检查信息系统'
 })
-function home() { return { key: 'home', label: '角色工作台', path: '/dashboard', icon: LayoutDashboard } }
-function workbench() { return { key: 'workbench', label: '检查人员工作台', icon: ClipboardList, children: [i('/inspector/initial-workbench', '初始检查工作台'), i('/inspector/periodic-workbench', '定期检查工作台')] } }
+function home(label) { return { key: 'home', label, path: '/dashboard', icon: LayoutDashboard } }
+function workbench() { return { key: 'workbench', label: '我的检查任务', icon: ClipboardList, children: [i('/inspector/initial-workbench', '初始检查任务'), i('/inspector/periodic-workbench', '定期检查任务')] } }
 function base() { return { key: 'base', label: '基础数据与矩阵', icon: Database, children: [i('/base/routes', '路线'), i('/base/bridge-types', '桥梁类型'), i('/base/parts', '部位字典'), i('/base/components', '部件字典'), i('/base/initial-items', '初检项目字典'), i('/base/defect-definitions', '病害字典'), i('/base/component-matrix', '桥型-部位-部件矩阵'), i('/base/initial-matrix', '桥型-初检项目矩阵')] } }
 function archive() { return { key: 'archive', label: '桥梁档案', icon: Landmark, children: [i('/archive/bridges', '基础状况卡片'), i('/archive/components', '桥梁具体部件'), i('/archive/files', '档案资料记录')] } }
 function initial() { return { key: 'initial', label: '初始检查', icon: ClipboardList, children: [i('/initial/tasks', '初始检查任务'), i('/initial/records', '初始检查记录'), i('/initial/items', '检测项目结果'), i('/initial/defects', '初始病害'), i('/initial/reports', '初始检查报告')] } }

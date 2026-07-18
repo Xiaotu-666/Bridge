@@ -63,4 +63,19 @@ public class FileStorageService {
             throw new BusinessException("文件路径无效");
         }
     }
+
+    public void delete(String relativePath) {
+        if (relativePath == null || relativePath.isBlank()) {
+            return;
+        }
+        try {
+            Path target = uploadDir.resolve(relativePath).normalize();
+            if (!target.startsWith(uploadDir)) {
+                throw new BusinessException("非法文件路径");
+            }
+            Files.deleteIfExists(target);
+        } catch (IOException ex) {
+            throw new BusinessException("文件删除失败：" + ex.getMessage());
+        }
+    }
 }

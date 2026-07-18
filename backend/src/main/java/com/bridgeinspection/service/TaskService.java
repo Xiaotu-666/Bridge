@@ -4,11 +4,13 @@ import com.bridgeinspection.common.BusinessException;
 import com.bridgeinspection.security.AuthenticatedUser;
 import com.bridgeinspection.security.SecurityUtils;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -20,6 +22,62 @@ public class TaskService {
     public TaskService(JdbcTemplate jdbcTemplate, IdService idService) {
         this.jdbcTemplate = jdbcTemplate;
         this.idService = idService;
+    }
+
+    @Scheduled(cron = "${app.tasks.periodic-auto-create-cron:0 5 0 * * *}", zone = "Asia/Shanghai")
+    @Transactional
+    public synchronized Map<String, Object> generateUpcomingPeriodicTasks() {
+        LocalDate today = LocalDate.now();
+        LocalDate cutoff = today.plusMonths(1);
+        List<Map<String, Object>> admins = jdbcTemplate.queryForList("""
+                SELECT u.user_id FROM tb_user u JOIN tb_role r ON r.role_id=u.role_id
+                WHERE r.role_code='admin' AND u.user_status=1 ORDER BY u.user_id LIMIT 1
+                """);
+        if (admins.isEmpty()) return Map.of("created", 0, "candidate_count", 0, "message", "未找到可作为任务创建人的系统管理员");
+        int creatorId = ((Number) admins.get(0).get("user_id")).intValue();
+        List<Map<String, Object>> candidates = jdbcTemplate.queryForList("""
+                SELECT p.bridge_code,p.periodic_inspection_code,p.next_inspection_date
+                FROM tb_periodic_inspection p
+                WHERE p.next_inspection_date IS NOT NULL AND p.next_inspection_date<=?
+                  AND NOT EXISTS (
+                    SELECT 1 FROM tb_periodic_inspection newer
+                    WHERE newer.bridge_code=p.bridge_code
+                      AND (newer.inspection_date>p.inspection_date
+                        OR (newer.inspection_date=p.inspection_date AND newer.periodic_inspection_code>p.periodic_inspection_code))
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1 FROM tb_inspection_task t
+                    WHERE t.bridge_code=p.bridge_code AND t.inspection_type='periodic'
+                      AND t.task_status IN ('待分配','进行中')
+                  )
+                ORDER BY p.next_inspection_date,p.bridge_code
+                """, cutoff);
+        int created = 0;
+        for (Map<String, Object> candidate : candidates) {
+            LocalDate dueDate = LocalDate.parse(String.valueOf(candidate.get("next_inspection_date")));
+            LocalDate startDate = dueDate.minusMonths(1).isBefore(today) ? today : dueDate.minusMonths(1);
+            String taskId = idService.next("JC");
+            String bridgeCode = String.valueOf(candidate.get("bridge_code"));
+            String sourceRecord = String.valueOf(candidate.get("periodic_inspection_code"));
+            jdbcTemplate.update("""
+                    INSERT INTO tb_inspection_task
+                    (task_id,bridge_code,inspection_type,inspection_level,plan_start_date,plan_end_date,task_status,remarks,creator_id)
+                    VALUES (?,?, 'periodic','Ⅰ',?,?, '待分配',?,?)
+                    """, taskId, bridgeCode, startDate, dueDate,
+                    "系统根据上次定期检查 " + sourceRecord + " 的下次检查日期自动生成", creatorId);
+            jdbcTemplate.update("""
+                    INSERT INTO tb_task_status_history
+                    (history_id,task_id,from_status,to_status,opinion,operator_id)
+                    VALUES (?,?,NULL,'待分配',?,?)
+                    """, idService.next("HIS"), taskId, "定期检查任务自动创建", creatorId);
+            created++;
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("created", created);
+        result.put("candidate_count", candidates.size());
+        result.put("cutoff_date", cutoff);
+        result.put("message", created == 0 ? "未来一个月内没有需要新建的定期检查任务" : "已自动生成待分配的定期检查任务");
+        return result;
     }
 
     @Transactional

@@ -233,6 +233,7 @@ public class CrudService {
         return get(resource, id);
     }
 
+    @Transactional
     public void delete(String resource, String id) {
         assertCanWrite(resource);
         ResourceConfig config = config(resource);
@@ -240,6 +241,11 @@ public class CrudService {
         if (config.readOnly()) {
             throw new BusinessException("该资源不允许删除");
         }
+        if ("tasks".equals(resource)) { deleteTask(id); return; }
+        if ("routes".equals(resource)) assertRouteUnused(id);
+        if ("bridge-types".equals(resource)) deleteBridgeType(id);
+        if ("bridge-positions".equals(resource)) deleteBridgePosition(id);
+        if ("bridge-components".equals(resource)) deleteBridgeComponent(id);
         Set<String> columns = columns(config);
         if (columns.contains("is_deleted")) {
             jdbcTemplate.update("UPDATE `" + config.tableName() + "` SET is_deleted = 1 WHERE `" + config.idColumn() + "` = ?", id);
@@ -420,6 +426,15 @@ public class CrudService {
                     "SELECT COUNT(*) FROM tb_user WHERE role_id=?", Long.class, row.get("role_id"));
             row.put("user_count", userCount == null ? 0 : userCount);
         }
+        if ("bridge-types".equals(resource) && row.get("bridge_type_code") != null) {
+            String typeCode = String.valueOf(row.get("bridge_type_code"));
+            Long bridgeCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM tb_bridge WHERE bridge_type_code=?", Long.class, typeCode);
+            Long componentCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM tb_bridge_type_component_config WHERE bridge_type_code=?", Long.class, typeCode);
+            Long initialItemCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM tb_bridge_type_initial_item_config WHERE bridge_type_code=?", Long.class, typeCode);
+            row.put("bridge_count", bridgeCount == null ? 0 : bridgeCount);
+            row.put("component_matrix_count", componentCount == null ? 0 : componentCount);
+            row.put("initial_matrix_count", initialItemCount == null ? 0 : initialItemCount);
+        }
         if ("bridge-components".equals(resource) && row.get("component_code") != null) {
             List<Map<String, Object>> types = jdbcTemplate.queryForList("""
                     SELECT GROUP_CONCAT(DISTINCT bt.bridge_type_name ORDER BY bt.bridge_type_name SEPARATOR '、') AS bridge_type_names
@@ -500,6 +515,54 @@ public class CrudService {
         if (!bridges.isEmpty()) row.putAll(bridges.get(0));
     }
 
+    private void assertRouteUnused(String routeCode) {
+        long bridges = count("SELECT COUNT(*) FROM tb_bridge WHERE route_code=?", routeCode);
+        if (bridges > 0) throw new BusinessException("该路线已关联 " + bridges + " 座桥梁，不能删除。请先将桥梁迁移到其他路线或删除桥梁档案。");
+    }
+
+    private void deleteBridgeType(String bridgeTypeCode) {
+        Long bridgeCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM tb_bridge WHERE bridge_type_code=?", Long.class, bridgeTypeCode);
+        long bridges = bridgeCount == null ? 0 : bridgeCount;
+        if (bridges > 0) throw new BusinessException("该桥梁类型已关联 " + bridges + " 座桥梁，不能删除。请先迁移这些桥梁的类型。");
+        jdbcTemplate.update("DELETE FROM tb_bridge_type_component_config WHERE bridge_type_code=?", bridgeTypeCode);
+        jdbcTemplate.update("DELETE FROM tb_bridge_type_initial_item_config WHERE bridge_type_code=?", bridgeTypeCode);
+    }
+
+    private void deleteBridgePosition(String partCode) {
+        long instances = count("SELECT COUNT(*) FROM tb_bridge_specific_component WHERE part_code=?", partCode);
+        long inspections = count("SELECT COUNT(*) FROM tb_component_inspection WHERE part_code=?", partCode);
+        long defects = count("SELECT COUNT(*) FROM tb_defect WHERE defect_part_code=?", partCode);
+        if (instances + inspections + defects > 0) throw new BusinessException("该部位已被桥梁部件、定期检查或病害历史引用，不能删除。请保留历史字典或先迁移引用数据。");
+        jdbcTemplate.update("DELETE FROM tb_bridge_type_component_config WHERE part_code=?", partCode);
+    }
+
+    private void deleteBridgeComponent(String componentCode) {
+        long instances = count("SELECT COUNT(*) FROM tb_bridge_specific_component WHERE component_code=?", componentCode);
+        long inspections = count("SELECT COUNT(*) FROM tb_component_inspection WHERE component_code=?", componentCode);
+        if (instances + inspections > 0) throw new BusinessException("该部件已被桥梁具体部件或定期检查历史引用，不能删除。请保留历史字典或先迁移引用数据。");
+        jdbcTemplate.update("DELETE FROM tb_bridge_type_component_config WHERE component_code=?", componentCode);
+    }
+
+    private void deleteTask(String taskId) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("SELECT task_status FROM tb_inspection_task WHERE task_id=?", taskId);
+        if (rows.isEmpty()) throw new BusinessException("检查任务不存在");
+        String status = String.valueOf(rows.get(0).get("task_status"));
+        if (!Set.of("待分配", "已取消").contains(status)) throw new BusinessException("仅待分配或已取消且未产生检查记录的任务可以删除；进行中任务请先取消，已完成或已审核任务必须保留。");
+        long initial = count("SELECT COUNT(*) FROM tb_initial_inspection WHERE task_id=?", taskId);
+        long periodic = count("SELECT COUNT(*) FROM tb_periodic_inspection WHERE task_id=?", taskId);
+        long reports = count("SELECT COUNT(*) FROM tb_report WHERE task_id=?", taskId);
+        long archives = count("SELECT COUNT(*) FROM tb_inspection_archive WHERE task_id=?", taskId);
+        if (initial + periodic + reports + archives > 0) throw new BusinessException("该任务已形成检查记录、报告或归档数据，不能删除。请保留历史记录并使用取消状态。");
+        jdbcTemplate.update("DELETE FROM tb_task_assignment WHERE task_id=?", taskId);
+        jdbcTemplate.update("DELETE FROM tb_task_status_history WHERE task_id=?", taskId);
+        jdbcTemplate.update("DELETE FROM tb_inspection_task WHERE task_id=?", taskId);
+    }
+
+    private long count(String sql, Object... args) {
+        Long value = jdbcTemplate.queryForObject(sql, Long.class, args);
+        return value == null ? 0 : value;
+    }
+
     private void enrichTaskStatus(Map<String, Object> row) {
         if (row.get("task_id") == null) return;
         List<Map<String, Object>> tasks = jdbcTemplate.queryForList(
@@ -508,6 +571,12 @@ public class CrudService {
     }
 
     private void appendBridgeFilters(StringBuilder where, List<Object> args, Map<String, String> params, Set<String> columns) {
+        String bridgeSearch = params.get("bridgeSearch");
+        if (bridgeSearch != null && !bridgeSearch.isBlank()) {
+            where.append(" AND (bridge_code LIKE ? OR bridge_name LIKE ? OR route_code LIKE ? OR location_address LIKE ?)");
+            String value = "%" + bridgeSearch.trim() + "%";
+            args.add(value); args.add(value); args.add(value); args.add(value);
+        }
         appendExact(where, args, columns, "route_code", params.get("routeCode"));
         appendExact(where, args, columns, "administrative_code", params.get("administrativeCode"));
         appendExact(where, args, columns, "management_unit", params.get("managementUnit"));

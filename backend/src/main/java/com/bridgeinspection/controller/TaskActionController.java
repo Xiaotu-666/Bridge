@@ -25,6 +25,15 @@ public class TaskActionController {
         this.logService = logService;
     }
 
+    @PostMapping("/periodic/generate")
+    @PreAuthorize("hasAnyAuthority('task-create','task-edit') or hasRole('admin')")
+    public ApiResponse<Map<String, Object>> generatePeriodicTasks(HttpServletRequest request) {
+        Map<String, Object> result = taskService.generateUpcomingPeriodicTasks();
+        logService.log(request, "task", "新增", "tb_inspection_task", "periodic-auto",
+                "按下次检查日期自动生成定期检查任务：" + result.get("created") + "条", true);
+        return ApiResponse.ok(result);
+    }
+
     @PostMapping("/{id}/assign")
     @PreAuthorize("hasAnyAuthority('task-create','task-edit') or hasRole('admin')")
     public ApiResponse<Void> assign(@PathVariable String id, @RequestBody Map<String, Object> body, HttpServletRequest request) {

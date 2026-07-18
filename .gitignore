@@ -11,6 +11,7 @@ frontend/dist/
 
 # Runtime files
 backend/*.log
+frontend/*.log
 uploads/
 reports/
 updates/
@@ -18,4 +19,5 @@ updates/
 # Historical source snapshots are not part of active version history
 backup/legacy-flask-src/
 
-# Database snapshots under backup/database are intentionally versioned.
+# Database snapshots are runtime data and remain independent from GitHub versions.
+backup/database/
