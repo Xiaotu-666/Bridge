@@ -72,24 +72,29 @@ public class VersionControlService {
         initialize();
         String remote = remoteUrl();
         if (remote.isBlank()) throw new BusinessException("尚未配置 GitHub 远端仓库");
+        runGit(false, "fetch", "origin", "--prune", "--tags");
+        ReleaseTag latestRelease = latestOfficialRelease();
+        if (latestRelease == null) {
+            throw new BusinessException("GitHub 尚未发布正式版本标签，请先创建 v1.0、v1.1 这类版本标签");
+        }
         String installedVersion = currentVersion();
         String installedCommit = currentVersionCommit();
         if (installedCommit.isBlank()) {
-            installedCommit = runGit(false, "rev-parse", "HEAD").output().trim();
+            String taggedCommit = officialReleaseCommit(installedVersion);
+            installedCommit = taggedCommit.isBlank()
+                    ? runGit(false, "rev-parse", "HEAD").output().trim()
+                    : taggedCommit;
             jdbcTemplate.update("UPDATE tb_system_version SET git_commit=?,build_time=COALESCE(build_time,NOW()),repository_url=? WHERE id=(SELECT id FROM (SELECT id FROM tb_system_version ORDER BY id DESC LIMIT 1) current_version)",
                     installedCommit, canonicalRepositoryUrl(remote));
         }
-        runGit(false, "fetch", "origin", "--prune");
         String currentBranch = branch();
-        GitResult remoteHead = runGit(true, "rev-parse", "--verify", "origin/" + currentBranch);
-        if (remoteHead.exitCode() != 0) throw new BusinessException("GitHub 上不存在分支 " + currentBranch);
-        String remoteCommit = remoteHead.output().trim();
-        int ahead = revisionCount("origin/" + currentBranch + "..HEAD");
-        int behind = revisionCount("HEAD..origin/" + currentBranch);
-        GitResult latest = runGit(true, "log", "-1", "--pretty=format:%h%x1f%s%x1f%aI", "origin/" + currentBranch);
+        String remoteCommit = latestRelease.commit();
+        int ahead = revisionCount(remoteCommit + ".." + installedCommit);
+        int behind = revisionCount(installedCommit + ".." + remoteCommit);
+        GitResult latest = runGit(true, "log", "-1", "--pretty=format:%h%x1f%s%x1f%aI", remoteCommit);
         String[] fields = latest.output().split("\\u001f", -1);
         boolean updateAvailable = !remoteCommit.equals(installedCommit);
-        String availableVersion = updateAvailable ? nextMinorVersion(installedVersion) : installedVersion;
+        String availableVersion = latestRelease.version();
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("remote_url", canonicalRepositoryUrl(remote));
         result.put("branch", currentBranch);
@@ -97,12 +102,15 @@ public class VersionControlService {
         result.put("behind", behind);
         result.put("current_version", installedVersion);
         result.put("available_version", availableVersion);
+        result.put("release_tag", latestRelease.tag());
         result.put("update_available", updateAvailable);
         result.put("remote_hash", remoteCommit);
         result.put("remote_commit", fields.length > 0 ? fields[0] : "");
         result.put("remote_message", fields.length > 1 ? fields[1] : "");
         result.put("remote_time", fields.length > 2 ? fields[2] : "");
-        result.put("message", updateAvailable ? "发现 " + availableVersion + " 更新" : "当前已是最新版本 " + installedVersion);
+        result.put("message", updateAvailable
+                ? "发现正式版本 " + availableVersion + " 更新"
+                : "当前已是最新正式版本 " + installedVersion);
         return result;
     }
 
@@ -129,14 +137,9 @@ public class VersionControlService {
     @Transactional
     public synchronized Map<String, Object> rollbackVersion(String requestedVersion) {
         String version = normalizeVersion(requestedVersion);
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-                SELECT version_no,git_commit,repository_url FROM tb_system_version
-                WHERE version_no=? AND git_commit IS NOT NULL AND git_commit<>''
-                ORDER BY id DESC LIMIT 1
-                """, version);
-        if (rows.isEmpty()) throw new BusinessException("没有找到 " + version + " 的可回溯代码版本");
         if (version.equals(currentVersion())) throw new BusinessException("当前已经是 " + version);
-        String targetCommit = String.valueOf(rows.get(0).get("git_commit"));
+        String targetCommit = officialReleaseCommit(version);
+        if (targetCommit.isBlank()) throw new BusinessException("没有找到 " + version + " 对应的正式 Git 标签");
         GitResult commit = runGit(true, "cat-file", "-e", targetCommit + "^{commit}");
         if (commit.exitCode() != 0) throw new BusinessException(version + " 对应的 Git 提交不存在，无法回溯");
         assertCleanRepository();
@@ -152,8 +155,7 @@ public class VersionControlService {
             runGit(true, "reset", "--hard", controlCommit);
             throw new BusinessException("版本回溯失败，代码已自动恢复到回溯前状态：" + ex.getMessage());
         }
-        registerSystemVersion(version, targetCommit,
-                canonicalRepositoryUrl(String.valueOf(rows.get(0).get("repository_url"))));
+        registerSystemVersion(version, targetCommit, canonicalRepositoryUrl(remoteUrl()));
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("current_version", version);
         result.put("git_commit", targetCommit);
@@ -364,7 +366,14 @@ public class VersionControlService {
                 SELECT id,version_no,git_commit,build_time,repository_url,create_time
                 FROM tb_system_version ORDER BY id DESC LIMIT 20
                 """);
-        versions.forEach(row -> row.put("version_no", normalizeVersion(String.valueOf(row.get("version_no")))));
+        Map<String, String> releases = new LinkedHashMap<>();
+        officialReleases().forEach(release -> releases.put(release.version(), release.commit()));
+        versions.removeIf(row -> {
+            String version = normalizeVersion(String.valueOf(row.get("version_no")));
+            String commit = String.valueOf(row.get("git_commit"));
+            row.put("version_no", version);
+            return !commit.equals(releases.get(version));
+        });
         return versions;
     }
 
@@ -377,9 +386,33 @@ public class VersionControlService {
         return "V" + major + "." + minor;
     }
 
-    private String nextMinorVersion(String value) {
-        String[] parts = normalizeVersion(value).substring(1).split("\\.");
-        return "V" + parts[0] + "." + (Integer.parseInt(parts[1]) + 1);
+    private List<ReleaseTag> officialReleases() {
+        GitResult tags = runGit(true, "tag", "--list", "v[0-9]*.[0-9]*", "--sort=-v:refname");
+        if (tags.exitCode() != 0 || tags.output().isBlank()) return List.of();
+        List<ReleaseTag> releases = new ArrayList<>();
+        tags.output().lines().map(String::trim)
+                .filter(tag -> tag.matches("(?i)^v\\d+\\.\\d+$"))
+                .forEach(tag -> {
+                    GitResult commit = runGit(true, "rev-list", "-n", "1", tag);
+                    if (commit.exitCode() == 0 && !commit.output().isBlank()) {
+                        releases.add(new ReleaseTag(normalizeVersion(tag), tag, commit.output().trim()));
+                    }
+                });
+        return releases;
+    }
+
+    private ReleaseTag latestOfficialRelease() {
+        List<ReleaseTag> releases = officialReleases();
+        return releases.isEmpty() ? null : releases.get(0);
+    }
+
+    private String officialReleaseCommit(String version) {
+        String normalized = normalizeVersion(version);
+        return officialReleases().stream()
+                .filter(release -> release.version().equals(normalized))
+                .map(ReleaseTag::commit)
+                .findFirst()
+                .orElse("");
     }
 
     private String canonicalRepositoryUrl(String value) {
@@ -550,5 +583,8 @@ public class VersionControlService {
     }
 
     private record GitResult(int exitCode, String output) {
+    }
+
+    private record ReleaseTag(String version, String tag, String commit) {
     }
 }

@@ -7,8 +7,8 @@
 
     <section class="table-panel github-section">
       <div class="section-heading">
-        <div><span>GITHUB VERSION CONTROL</span><h3>GitHub 版本控制</h3><p>以远端仓库更新为准，不展示本地分支和未提交文件。</p></div>
-        <div class="section-actions"><a class="repo-link" :href="repositoryUrl" target="_blank" rel="noopener"><Github :size="17"/>Xiaotu-666/Bridge</a><el-button type="primary" :icon="RefreshCw" :loading="checking" @click="checkGithub">检查 GitHub 更新</el-button></div>
+        <div><span>GITHUB VERSION CONTROL</span><h3>GitHub 正式版本</h3><p>以 v1.0、v1.1 等正式版本标签为准，普通代码或文档提交不会触发系统升级。</p></div>
+        <div class="section-actions"><a class="repo-link" :href="repositoryUrl" target="_blank" rel="noopener"><Github :size="17"/>Xiaotu-666/Bridge</a><el-button type="primary" :icon="RefreshCw" :loading="checking" @click="checkGithub">检查正式版本</el-button></div>
       </div>
 
       <section class="version-strip">
@@ -25,11 +25,11 @@
 
       <div class="history-heading"><div><span>SYSTEM RELEASES</span><h3>系统版本更新记录</h3></div><el-tag effect="plain">{{ versionRows.length }} 个版本</el-tag></div>
       <el-table v-loading="loading" :data="versionRows" border empty-text="暂无系统版本记录">
-        <el-table-column prop="version_no" label="版本号" width="120"><template #default="{row}"><strong class="version-number">{{ row.version_no }}</strong></template></el-table-column>
-        <el-table-column label="更新说明" min-width="260"><template #default="{row}">{{ versionSummary(row) }}</template></el-table-column>
-        <el-table-column label="GitHub 提交" width="145"><template #default="{row}"><code>{{ row.git_commit ? row.git_commit.slice(0,8) : '首次检查后记录' }}</code></template></el-table-column>
-        <el-table-column label="更新时间" width="190"><template #default="{row}">{{ formatTime(row.build_time || row.create_time) }}</template></el-table-column>
-        <el-table-column label="操作" width="130" fixed="right"><template #default="{row}"><el-tag v-if="row.version_no===currentVersion" type="success" effect="plain">当前版本</el-tag><el-button v-else-if="row.git_commit" text type="warning" :icon="History" :loading="rollingBack===row.version_no" @click="rollback(row)">版本回溯</el-button><span v-else class="muted">暂无恢复点</span></template></el-table-column>
+        <el-table-column prop="version_no" label="版本号" width="100"><template #default="{row}"><strong class="version-number">{{ row.version_no }}</strong></template></el-table-column>
+        <el-table-column label="更新说明" min-width="180"><template #default="{row}">{{ versionSummary(row) }}</template></el-table-column>
+        <el-table-column label="GitHub 提交" width="125"><template #default="{row}"><code>{{ row.git_commit ? row.git_commit.slice(0,8) : '首次检查后记录' }}</code></template></el-table-column>
+        <el-table-column label="更新时间" width="170"><template #default="{row}">{{ formatTime(row.build_time || row.create_time) }}</template></el-table-column>
+        <el-table-column label="操作" width="150"><template #default="{row}"><el-tag v-if="row.version_no===currentVersion" type="success" effect="plain">当前版本</el-tag><el-tag v-else-if="isNewerVersion(row.version_no,currentVersion)" type="warning" effect="plain">可更新</el-tag><el-button v-else-if="row.git_commit" text type="warning" :icon="History" :loading="rollingBack===row.version_no" @click="rollback(row)">回溯到 {{ row.version_no }}</el-button><span v-else class="muted">暂无恢复点</span></template></el-table-column>
       </el-table>
     </section>
 
@@ -67,9 +67,9 @@ const data=reactive({initialized:false,remote_url:'',current_version:'V1.0',syst
 const loading=ref(false),checking=ref(false),updating=ref(false),rollingBack=ref(''),backupDialog=ref(false),backingUp=ref(false),backupMessage=ref(''),deletingBackup=ref(null),githubUpdate=ref(null)
 const repositoryUrl=computed(()=>canonicalRepository(data.remote_url))
 const currentVersion=computed(()=>normalizeVersion(data.current_version||'V1.0'))
-const availableVersion=computed(()=>normalizeVersion(githubUpdate.value?.available_version||currentVersion.value))
-const updateStatus=computed(()=>!githubUpdate.value?'尚未检查':githubUpdate.value.update_available?`发现 ${availableVersion.value} 更新`:'已是最新版本')
-const versionRows=computed(()=>{const seen=new Set();return(data.system_versions||[]).map(row=>({...row,version_no:normalizeVersion(row.version_no)})).filter(row=>{if(seen.has(row.version_no))return false;seen.add(row.version_no);return true})})
+const availableVersion=computed(()=>githubUpdate.value?normalizeVersion(githubUpdate.value.available_version):'—')
+const updateStatus=computed(()=>!githubUpdate.value?'待检查':githubUpdate.value.update_available?`发现 ${availableVersion.value} 更新`:'已是最新版本')
+const versionRows=computed(()=>{const seen=new Set();return(data.system_versions||[]).map(row=>({...row,version_no:normalizeVersion(row.version_no)})).filter(row=>{if(seen.has(row.version_no))return false;seen.add(row.version_no);return true}).sort((a,b)=>compareVersions(b.version_no,a.version_no))})
 onMounted(load)
 async function load(){loading.value=true;try{Object.assign(data,await http.get('/version-control'))}finally{loading.value=false}}
 async function checkGithub(){checking.value=true;try{githubUpdate.value=await http.post('/version-control/github/check');ElMessage[githubUpdate.value.update_available?'warning':'success'](githubUpdate.value.message);await load()}finally{checking.value=false}}
@@ -80,6 +80,8 @@ async function removeBackup(row){deletingBackup.value=row.backup_id;try{await ht
 async function download(row){const response=await fetch(`/api/version-control/backups/${row.backup_id}/download`,{headers:{Authorization:`Bearer ${localStorage.getItem('bridge_token')}`}});if(!response.ok){ElMessage.error('数据库备份下载失败');return}const blob=await response.blob();const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download=row.file_name;link.click();URL.revokeObjectURL(url)}
 function canonicalRepository(value){const remote=value||'https://github.com/Xiaotu-666/Bridge';return remote.endsWith('.git')?remote.slice(0,-4):remote}
 function normalizeVersion(value){const match=String(value||'').match(/(\d+)\.(\d+)/);return match?`V${match[1]}.${match[2]}`:'V1.0'}
+function compareVersions(left,right){const a=normalizeVersion(left).slice(1).split('.').map(Number),b=normalizeVersion(right).slice(1).split('.').map(Number);return(a[0]-b[0])||(a[1]-b[1])}
+function isNewerVersion(version,current){return compareVersions(version,current)>0}
 function versionSummary(row){return row.version_no==='V1.0'?'系统初始版本':'通过 GitHub 更新的系统版本'}
 function formatTime(value){if(!value)return'—';return String(value).replace('T',' ').replace(/([+-]\d{2}:\d{2}|Z)$/,'').slice(0,19)}
 function formatBytes(value){const size=Number(value||0);if(size<1024)return`${size} B`;if(size<1048576)return`${(size/1024).toFixed(1)} KB`;return`${(size/1048576).toFixed(1)} MB`}
