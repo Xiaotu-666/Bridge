@@ -16,6 +16,10 @@ uploads/
 reports/
 updates/
 
+# Unused local video sources are not part of the application bundle.
+/*.mp4
+/frontend/public/huajiang-canyon-bridge.mp4
+
 # Historical source snapshots are not part of active version history
 backup/legacy-flask-src/
 
