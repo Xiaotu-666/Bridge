@@ -34,6 +34,13 @@ import java.util.concurrent.TimeUnit;
 public class VersionControlService {
     private static final DateTimeFormatter FILE_TIME = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss_SSS");
     private static final DateTimeFormatter MESSAGE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final List<String> VERSION_CONTROL_KERNEL = List.of(
+            ".gitignore",
+            "backend/src/main/java/com/bridgeinspection/controller/VersionControlController.java",
+            "backend/src/main/java/com/bridgeinspection/service/VersionControlService.java",
+            "backend/src/main/resources/db/v2",
+            "frontend/src/views/VersionControlView.vue"
+    );
 
     private final JdbcTemplate jdbcTemplate;
     private final Path repositoryRoot;
@@ -133,17 +140,27 @@ public class VersionControlService {
         GitResult commit = runGit(true, "cat-file", "-e", targetCommit + "^{commit}");
         if (commit.exitCode() != 0) throw new BusinessException(version + " 对应的 Git 提交不存在，无法回溯");
         assertCleanRepository();
+        String controlCommit = runGit(false, "rev-parse", "HEAD").output().trim();
         String safetyBranch = createSafetyBranch("rollback-safety");
         Map<String, Object> backup = performDatabaseBackup("回溯到 " + version + " 前自动备份");
-        runGit(false, "reset", "--hard", targetCommit);
+        String rollbackCommit;
+        try {
+            runGit(false, "reset", "--hard", targetCommit);
+            restoreVersionControlKernel(controlCommit);
+            rollbackCommit = commitRollbackSnapshot(version, targetCommit);
+        } catch (RuntimeException ex) {
+            runGit(true, "reset", "--hard", controlCommit);
+            throw new BusinessException("版本回溯失败，代码已自动恢复到回溯前状态：" + ex.getMessage());
+        }
         registerSystemVersion(version, targetCommit,
                 canonicalRepositoryUrl(String.valueOf(rows.get(0).get("repository_url"))));
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("current_version", version);
         result.put("git_commit", targetCommit);
+        result.put("rollback_commit", rollbackCommit);
         result.put("safety_branch", safetyBranch);
         result.put("backup_id", backup.get("backup_id"));
-        result.put("message", "已回溯到 " + version + "，请重启系统使历史版本生效");
+        result.put("message", "已回溯到 " + version + "；GitHub 更新与版本控制功能已保留，请重启系统使历史业务版本生效");
         return result;
     }
 
@@ -382,6 +399,30 @@ public class VersionControlService {
         String name = prefix + "-" + LocalDateTime.now().format(FILE_TIME);
         runGit(false, "branch", name, "HEAD");
         return name;
+    }
+
+    private void restoreVersionControlKernel(String controlCommit) {
+        for (String path : VERSION_CONTROL_KERNEL) {
+            GitResult exists = runGit(true, "cat-file", "-e", controlCommit + ":" + path);
+            if (exists.exitCode() == 0) runGit(false, "checkout", controlCommit, "--", path);
+        }
+
+        GitResult rootFiles = runGit(false, "ls-tree", "-r", "--name-only", controlCommit);
+        rootFiles.output().lines()
+                .filter(path -> !path.contains("/") && path.toLowerCase().endsWith(".docx"))
+                .forEach(path -> runGit(false, "checkout", controlCommit, "--", path));
+
+        runGit(true, "restore", "--source=" + controlCommit, "--staged", "--worktree", "--", "backup/database");
+    }
+
+    private String commitRollbackSnapshot(String version, String targetCommit) {
+        runGit(false, "add", "--all", "--", ".");
+        GitResult changed = runGit(true, "diff", "--cached", "--quiet");
+        if (changed.exitCode() != 0) {
+            String shortTarget = targetCommit.substring(0, Math.min(8, targetCommit.length()));
+            runGit(false, "commit", "-m", "系统回溯到 " + version + "（业务基线 " + shortTarget + "，保留版本控制内核）");
+        }
+        return runGit(false, "rev-parse", "HEAD").output().trim();
     }
 
     private void registerSystemVersion(String version, String commit, String repositoryUrl) {
