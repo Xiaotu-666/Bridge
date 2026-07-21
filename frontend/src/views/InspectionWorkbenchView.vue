@@ -60,24 +60,29 @@
           <el-table-column label="病害字典" min-width="180"><template #default="{row}"><el-select v-model="row.defect_definition_code" clearable filterable placeholder="无病害/选择病害" @change="applyDefect(row)"><el-option v-for="item in defectDefinitions" :key="item.defect_definition_code" :label="item.defect_name" :value="item.defect_definition_code" /></el-select></template></el-table-column>
           <el-table-column label="检查说明" min-width="230"><template #default="{row}"><el-input v-model="row.inspection_description" type="textarea" :rows="2" /></template></el-table-column>
         </el-table>
-        <el-table v-else :data="rows" border height="560" class="inspection-table periodic-table">
-          <el-table-column type="index" label="序号" width="60" fixed />
-          <el-table-column prop="part_name" label="部位" width="125" fixed="left" />
-          <el-table-column prop="component_name" label="部件" min-width="180" fixed="left" />
-          <el-table-column prop="component_serial" label="部件序号" width="115" />
-          <el-table-column prop="location_desc" label="所在位置" min-width="170" />
-          <el-table-column label="评分" width="120"><template #default="{row}"><el-input-number v-model="row.score" :min="0" :max="100" :precision="1" controls-position="right" /></template></el-table-column>
-          <el-table-column label="病害字典" min-width="180"><template #default="{row}"><el-select v-model="row.defect_definition_code" clearable filterable placeholder="无病害/选择病害" @change="applyDefect(row)"><el-option v-for="item in defectDefinitions" :key="item.defect_definition_code" :label="item.defect_name" :value="item.defect_definition_code" /></el-select></template></el-table-column>
-          <el-table-column label="病害位置" min-width="180"><template #default="{row}"><el-input v-model="row.defect_location" /></template></el-table-column>
-          <el-table-column label="病害范围" min-width="170"><template #default="{row}"><el-input v-model="row.defect_range" /></template></el-table-column>
-          <el-table-column label="检查说明/养护建议" min-width="240"><template #default="{row}"><el-input v-model="row.maintenance_advice" type="textarea" :rows="2" /></template></el-table-column>
-        </el-table>
+      <el-table v-else :data="rows" border height="560" class="inspection-table periodic-table">
+           <el-table-column type="index" label="序号" width="55" fixed />
+           <el-table-column prop="part_name" label="部位" width="100" fixed="left" />
+           <el-table-column prop="component_name" label="部件" min-width="140" fixed="left" />
+           <el-table-column prop="component_serial" label="部件序号" width="100" />
+           <el-table-column label="评分" width="85"><template #default="{row}"><el-input-number v-model="row.score" :min="0" :max="100" :precision="1" controls-position="right" size="small"/></template></el-table-column>
+           <el-table-column label="病害字典" min-width="160"><template #default="{row}"><el-select v-model="row.defect_definition_code" clearable filterable placeholder="选择病害" size="small" @change="applyDefect(row)"><el-option v-for="item in defectDefinitions" :key="item.defect_definition_code" :label="item.defect_name" :value="item.defect_definition_code" /></el-select></template></el-table-column>
+           <el-table-column label="缺损类型" min-width="140"><template #default="{row}"><el-input v-model="row.defect_type" placeholder="裂缝/锈蚀/..." size="small"/></template></el-table-column>
+           <el-table-column label="缺损位置" min-width="140"><template #default="{row}"><el-input v-model="row.defect_location" placeholder="如：跨中底板" size="small"/></template></el-table-column>
+           <el-table-column label="缺损范围" min-width="120"><template #default="{row}"><el-input v-model="row.defect_range" placeholder="如：3处/2m²" size="small"/></template></el-table-column>
+           <el-table-column label="缺损程度" width="100"><template #default="{row}"><el-select v-model="row.defect_degree_code" clearable size="small"><el-option label="轻微" value="slight"/><el-option label="中等" value="medium"/><el-option label="严重" value="serious"/><el-option label="危险" value="danger"/></el-select></template></el-table-column>
+           <el-table-column label="最不利构件" min-width="130"><template #default="{row}"><el-input v-model="row.worst_component" placeholder="最不利构件编号" size="small"/></template></el-table-column>
+           <el-table-column label="照片" width="130"><template #default="{row}"><div style="display:flex;align-items:center;gap:4px"><input type="file" accept="image/*" style="display:none" :ref="el=>{if(el&&row.component_inspection_id) row._fileInput=el}" @change="e=>uploadPhoto(row,e)"/><el-button size="small" circle @click="row._fileInput?.click()" title="上传照片"><span style="font-size:16px">📷</span></el-button><img v-if="row._photoUrl" :src="row._photoUrl" style="width:40px;height:40px;object-fit:cover;border-radius:4px;cursor:pointer" @click="previewUrl=row._photoUrl" :title="row._photoName"/></div></template></el-table-column>
+           <el-table-column label="养护建议" min-width="180"><template #default="{row}"><el-input v-model="row.maintenance_advice" type="textarea" :rows="2" size="small"/></template></el-table-column>
+           <el-table-column label="特殊检查" width="85"><template #default="{row}"><el-checkbox v-model="row.special_check_required" :true-value="1" :false-value="0"/></template></el-table-column>
+         </el-table>
       </section>
 
       <div v-if="!taskLocked" class="workbench-actions"><span>填写完成后上传，系统将同步检查记录、病害记录和任务状态。</span><div><el-button @click="save(false)" :loading="saving">保存草稿</el-button><el-button type="primary" @click="save(true)" :loading="saving">上传检查记录</el-button></div></div>
       <el-alert v-else class="locked-alert" type="info" :closable="false" title="任务已完成，检查记录已锁定，不能继续编辑或删除。"/>
     </template>
   </section>
+  <el-image-viewer v-if="previewUrl" :url-list="[previewUrl]" @close="previewUrl=''"/>
 </template>
 
 <script setup>
@@ -97,6 +102,7 @@ const record = reactive({})
 const rows = ref([])
 const defectDefinitions = ref([])
 const saving = ref(false)
+const previewUrl = ref('')
 const ratingLevels = [{ value: '1', label: '1 类' }, { value: '2', label: '2 类' }, { value: '3', label: '3 类' }, { value: '4', label: '4 类' }, { value: '5', label: '5 类' }]
 const recordStatus = computed(() => record.status === 'pending' ? '待审核' : record.status === 'draft' ? '草稿' : (record.status || '未上传'))
 
@@ -134,6 +140,20 @@ async function loadTask(taskId) {
   Object.keys(record).forEach(key => delete record[key]); Object.assign(record, data.record || {})
   rows.value = data.rows || []
   defectDefinitions.value = data.defectDefinitions || []
+  if (!isInitial.value) await loadExistingPhotos()
+}
+
+async function loadExistingPhotos() {
+  const ids = rows.value.filter(r => r.component_inspection_id).map(r => r.component_inspection_id)
+  if (!ids.length) return
+  try {
+    const photos = await http.get('/attachments', { params: { size: 500 } })
+    const photoList = photos.records || []
+    rows.value.forEach(row => {
+      const p = photoList.find(ph => ph.component_inspection_id === row.component_inspection_id)
+      if (p) { row._photoUrl = `/api/files/view?path=${encodeURIComponent(p.storage_path)}`; row._photoName = p.file_name }
+    })
+  } catch {}
 }
 
 function applyDefect(row) {
@@ -145,6 +165,17 @@ function applyDefect(row) {
   row.defect_range = row.defect_range || selected.default_range
   row.maintenance_advice = row.maintenance_advice || selected.default_advice
 }
+
+async function uploadPhoto(row, event) {
+      const file = event.target.files[0]; if (!file || !row.component_inspection_id) return
+      const form = new FormData(); form.append('file', file); form.append('componentInspectionId', row.component_inspection_id)
+      try {
+        const data = await http.post('/inspection-workbench/periodic/photos', form)
+        row._photoUrl = `/api/files/view?path=${encodeURIComponent(data.storage_path)}`
+        row._photoName = file.name; ElMessage.success('照片已上传')
+      } catch (err) { ElMessage.error(err.message || '照片上传失败') }
+      event.target.value = ''
+    }
 
 async function save(finalize) {
       if (!selectedTaskId.value) return

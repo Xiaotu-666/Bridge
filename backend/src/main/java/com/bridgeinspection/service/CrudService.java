@@ -432,8 +432,8 @@ public class CrudService {
         if ("null".equals(rating)) rating = "";
         if ("null".equals(conclusion)) conclusion = "";
         if ("null".equals(nextCheck)) nextCheck = "";
-        jdbcTemplate.update("DELETE FROM tb_evaluation_history WHERE bridge_code=? AND check_category_code=? AND evaluation_date=? AND rating_result=?",
-                bridgeCode, categoryCode, date, rating);
+        jdbcTemplate.update("DELETE FROM tb_evaluation_history WHERE bridge_code=? AND check_category_code=? AND evaluation_date=?",
+                bridgeCode, categoryCode, date);
         jdbcTemplate.update("INSERT INTO tb_evaluation_history (bridge_code,check_category_code,evaluation_date,rating_result,special_conclusion,next_check_date) VALUES (?,?,?,?,?,?)",
                 bridgeCode, categoryCode, date, rating, conclusion.isBlank() ? null : conclusion, nextCheck.isBlank() ? null : nextCheck);
     }

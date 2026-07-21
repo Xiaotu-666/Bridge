@@ -10,7 +10,9 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Map;
@@ -58,6 +60,12 @@ public class InspectionWorkbenchController {
         logService.log(request, "inspection", "上传", inspectionTable(type), taskId,
                 "检查填表上传至检查记录并生成病害记录", true);
         return ApiResponse.ok(result);
+    }
+
+    @PostMapping("/periodic/photos")
+    public ApiResponse<Map<String, Object>> uploadComponentPhoto(@RequestParam("file") MultipartFile file,
+                                                                  @RequestParam("componentInspectionId") Integer componentInspectionId) {
+        return ApiResponse.ok(workbenchService.uploadComponentPhoto(file, componentInspectionId));
     }
 
     private String inspectionTable(String type) {

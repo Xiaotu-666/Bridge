@@ -207,7 +207,7 @@ public class InspectionReviewService {
         if (!taskId.isBlank()) {
             taskService.reject(taskId, reason.trim());
             jdbcTemplate.update("UPDATE tb_inspection_task SET reviewer_id=? WHERE task_id=?", reviewerId, taskId);
-            jdbcTemplate.update("UPDATE tb_task_assignment SET assignment_status='进行中',complete_time=NULL WHERE task_id=?", taskId);
+            jdbcTemplate.update("UPDATE tb_task_assignment SET assignment_status='进行中',complete_time=NULL WHERE task_id=? AND assignment_status='已完成'", taskId);
         }
         jdbcTemplate.update("DELETE FROM tb_inspection_archive WHERE inspection_type=? AND record_code=?", type, recordCode);
         jdbcTemplate.update("""

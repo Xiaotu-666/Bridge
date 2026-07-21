@@ -6,11 +6,13 @@ import com.bridgeinspection.security.SecurityUtils;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -28,10 +30,15 @@ public class InspectionWorkbenchService {
 
     private final JdbcTemplate jdbcTemplate;
     private final IdService idService;
+    private final ReportService reportService;
+    private final FileStorageService fileStorageService;
 
-    public InspectionWorkbenchService(JdbcTemplate jdbcTemplate, IdService idService) {
+    public InspectionWorkbenchService(JdbcTemplate jdbcTemplate, IdService idService, ReportService reportService,
+                                      FileStorageService fileStorageService) {
         this.jdbcTemplate = jdbcTemplate;
         this.idService = idService;
+        this.reportService = reportService;
+        this.fileStorageService = fileStorageService;
     }
 
     public List<Map<String, Object>> tasks(String type) {
@@ -59,6 +66,7 @@ public class InspectionWorkbenchService {
         return jdbcTemplate.queryForList(sql.toString(), args.toArray());
     }
 
+    @Transactional
     public Map<String, Object> task(String type, String taskId) {
         String normalized = normalizeType(type);
         Map<String, Object> task = accessibleTask(normalized, taskId);
@@ -68,9 +76,12 @@ public class InspectionWorkbenchService {
         result.put("inspectionType", normalized);
         result.put("defectDefinitions", defectDefinitions(normalized));
         if (INITIAL.equals(normalized)) {
+            ensureInitialRecord(task);
+            ensureInitialItems(String.valueOf(task.get("bridge_code")));
             result.put("record", initialRecord(taskId));
             result.put("rows", initialRows(taskId, String.valueOf(task.get("bridge_code"))));
         } else {
+            ensurePeriodicRecord(task);
             ensurePeriodicComponents(String.valueOf(task.get("bridge_code")));
             result.put("record", periodicRecord(taskId));
             result.put("rows", periodicRows(taskId, String.valueOf(task.get("bridge_code"))));
@@ -98,12 +109,40 @@ public class InspectionWorkbenchService {
         if (finalize) {
             saveEvaluationHistory(task, record, normalized);
             completeTask(taskId);
+            generateReport(task, recordCode, normalized);
         }
         else startTask(taskId);
         Map<String, Object> result = task(normalized, taskId);
         result.put("savedRecordCode", recordCode);
         result.put("submitted", finalize);
         return result;
+    }
+
+    private void generateReport(Map<String, Object> task, String recordCode, String type) {
+        try {
+            if (INITIAL.equals(type)) reportService.generateInitialRecord(String.valueOf(task.get("bridge_code")));
+            else reportService.generatePeriodicRecord(String.valueOf(task.get("bridge_code")), recordCode);
+        } catch (Exception ignored) {
+            // Report generation failure should not block inspection submission
+        }
+    }
+
+    public Map<String, Object> uploadComponentPhoto(MultipartFile file, Integer componentInspectionId) {
+        if (file == null || file.isEmpty()) throw new BusinessException("请选择照片");
+        if (file.getSize() > 10L * 1024 * 1024) throw new BusinessException("单张照片不能超过10MB");
+        String originalName = file.getOriginalFilename() == null ? "defect-photo" : file.getOriginalFilename();
+        String lowerName = originalName.toLowerCase(Locale.ROOT);
+        String contentType = file.getContentType() == null ? "" : file.getContentType().toLowerCase(Locale.ROOT);
+        if (!(contentType.startsWith("image/") || lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg") || lowerName.endsWith(".png"))) {
+            throw new BusinessException("仅允许上传 JPG、JPEG、PNG 图片");
+        }
+        String storagePath = fileStorageService.store(file, "defect-photos");
+        jdbcTemplate.update("INSERT INTO tb_attachment (component_inspection_id,file_name,stored_file_name,storage_path,file_type,file_size,photo_category,upload_by) VALUES (?,?,?,?,?,?,'defect',?)",
+                componentInspectionId, originalName, storagePath.substring(storagePath.lastIndexOf('/') + 1), storagePath, contentType, file.getSize(),
+                SecurityUtils.currentUserId());
+        Map<String, Object> photo = jdbcTemplate.queryForMap("SELECT file_id,file_name,storage_path,file_type FROM tb_attachment WHERE storage_path=? LIMIT 1", storagePath);
+        photo.put("component_inspection_id", componentInspectionId);
+        return photo;
     }
 
     private void saveEvaluationHistory(Map<String, Object> task, Map<String, Object> record, String type) {
@@ -116,10 +155,57 @@ public class InspectionWorkbenchService {
         if (conclusion == null && !"initial".equals(type)) conclusion = nullable(record, "special_conclusion", "specialConclusion");
         String nextCheck = nullable(record, "next_inspection_date", "nextInspectionDate");
         if (!"initial".equals(type) && nextCheck == null) nextCheck = nullable(record, "nextInspectionDate");
-        jdbcTemplate.update("DELETE FROM tb_evaluation_history WHERE bridge_code=? AND check_category_code=? AND evaluation_date=? AND rating_result=?",
-                bridgeCode, categoryCode, date, rating);
+        jdbcTemplate.update("DELETE FROM tb_evaluation_history WHERE bridge_code=? AND check_category_code=? AND evaluation_date=?",
+                bridgeCode, categoryCode, date);
         jdbcTemplate.update("INSERT INTO tb_evaluation_history (bridge_code,check_category_code,evaluation_date,rating_result,special_conclusion,next_check_date) VALUES (?,?,?,?,?,?)",
                 bridgeCode, categoryCode, date, rating, conclusion, nextCheck);
+    }
+
+    private void ensureInitialRecord(Map<String, Object> task) {
+        String taskId = String.valueOf(task.get("task_id"));
+        Map<String, Object> existing = queryOptional("SELECT initial_inspection_code FROM tb_initial_inspection WHERE task_id=?", taskId);
+        if (existing != null) return;
+        String bridgeCode = String.valueOf(task.get("bridge_code"));
+        Integer nextVersion = jdbcTemplate.queryForObject(
+                "SELECT COALESCE(MAX(version_no),0)+1 FROM tb_initial_inspection WHERE bridge_code=?", Integer.class, bridgeCode);
+        jdbcTemplate.update("UPDATE tb_initial_inspection SET effective_flag=0 WHERE bridge_code=?", bridgeCode);
+        String code = idService.next("QI");
+        jdbcTemplate.update("""
+                INSERT INTO tb_initial_inspection
+                (initial_inspection_code,task_id,bridge_code,inspection_date,status,effective_flag,version_no,record_form_no,create_by)
+                VALUES (?,?,?,?,?,?,?,?,?)
+                """, code, taskId, bridgeCode, java.time.LocalDate.now().toString(), DRAFT, 1,
+                nextVersion == null ? 1 : nextVersion,
+                "B-" + java.time.LocalDate.now().toString().replace("-", "") + "-" + bridgeCode + "-" + code, userIdInt());
+    }
+
+    private void ensurePeriodicRecord(Map<String, Object> task) {
+        String taskId = String.valueOf(task.get("task_id"));
+        Map<String, Object> existing = queryOptional("SELECT periodic_inspection_code FROM tb_periodic_inspection WHERE task_id=?", taskId);
+        if (existing != null) return;
+        String bridgeCode = String.valueOf(task.get("bridge_code"));
+        String code = idService.next("QP");
+        jdbcTemplate.update("""
+                INSERT INTO tb_periodic_inspection
+                (periodic_inspection_code,task_id,bridge_code,inspection_date,status,create_by)
+                VALUES (?,?,?,?,?,?)
+                """, code, taskId, bridgeCode, java.time.LocalDate.now().toString(), DRAFT, userIdInt());
+    }
+
+    private void ensureInitialItems(String bridgeCode) {
+        List<Map<String, Object>> records = jdbcTemplate.queryForList(
+                "SELECT initial_inspection_code FROM tb_initial_inspection WHERE bridge_code=? ORDER BY version_no DESC LIMIT 1",
+                bridgeCode);
+        if (records.isEmpty()) return;
+        String initialCode = String.valueOf(records.get(0).get("initial_inspection_code"));
+        Integer count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM tb_initial_inspection_item WHERE initial_inspection_code=?", Integer.class, initialCode);
+        if (count != null && count > 0) return;
+        String bridgeType = jdbcTemplate.queryForObject("SELECT bridge_type_code FROM tb_bridge WHERE bridge_code=?", String.class, bridgeCode);
+        jdbcTemplate.update("""
+                INSERT INTO tb_initial_inspection_item (initial_inspection_code, item_code, applicable_flag)
+                SELECT ?, cfg.item_code, CASE WHEN cfg.requirement_type='required' THEN 1 ELSE 0 END
+                FROM tb_bridge_type_initial_item_config cfg WHERE cfg.bridge_type_code=?
+                """, initialCode, bridgeType);
     }
 
     private String saveInitialRecord(Map<String, Object> task, Map<String, Object> record) {
@@ -344,9 +430,9 @@ public class InspectionWorkbenchService {
     private List<Map<String, Object>> periodicRows(String taskId, String bridgeCode) {
         return jdbcTemplate.queryForList("""
                 SELECT c.bridge_component_id,c.part_code,p.part_name,c.component_code,co.component_name,
-                       c.component_serial,c.location_desc,ci.score,ci.defect_type,ci.defect_location,ci.defect_range,
-                       ci.defect_degree_code,ci.worst_component,ci.maintenance_advice,ci.special_check_required,
-                       ci.defect_definition_code
+                       c.component_serial,c.location_desc,ci.component_inspection_id,ci.score,ci.defect_type,ci.defect_location,
+                       ci.defect_range,ci.defect_degree_code,ci.worst_component,ci.maintenance_advice,
+                       ci.special_check_required,ci.defect_definition_code
                 FROM tb_bridge_specific_component c
                 JOIN tb_part p ON p.part_code=c.part_code
                 JOIN tb_component co ON co.component_code=c.component_code
@@ -418,11 +504,15 @@ public class InspectionWorkbenchService {
     private void startTask(String taskId) {
         jdbcTemplate.update("UPDATE tb_inspection_task SET task_status=?,actual_start_date=COALESCE(actual_start_date,CURDATE()),update_time=CURRENT_TIMESTAMP WHERE task_id=?", IN_PROGRESS, taskId);
         jdbcTemplate.update("UPDATE tb_task_assignment SET assignment_status='进行中',accept_time=COALESCE(accept_time,CURRENT_TIMESTAMP) WHERE task_id=? AND user_id=?", taskId, currentUserId());
+        jdbcTemplate.update("INSERT INTO tb_task_status_history (history_id,task_id,from_status,to_status,opinion,operator_id) VALUES (?,?,?,'进行中',?,?)",
+                idService.next("HIS"), taskId, "待分配", "检查员开始填报", currentUserId());
     }
 
     private void completeTask(String taskId) {
-        jdbcTemplate.update("UPDATE tb_inspection_task SET task_status=?,actual_end_date=CURDATE(),update_time=CURRENT_TIMESTAMP WHERE task_id=?", COMPLETED, taskId);
-        jdbcTemplate.update("UPDATE tb_task_assignment SET assignment_status=?,complete_time=CURRENT_TIMESTAMP WHERE task_id=? AND user_id=?", COMPLETED, taskId, currentUserId());
+        jdbcTemplate.update("UPDATE tb_inspection_task SET task_status=?,actual_end_date=COALESCE(actual_end_date,CURDATE()),update_time=CURRENT_TIMESTAMP WHERE task_id=?", COMPLETED, taskId);
+        jdbcTemplate.update("UPDATE tb_task_assignment SET assignment_status=?,complete_time=COALESCE(complete_time,CURRENT_TIMESTAMP) WHERE task_id=? AND user_id=?", COMPLETED, taskId, currentUserId());
+        jdbcTemplate.update("INSERT INTO tb_task_status_history (history_id,task_id,from_status,to_status,opinion,operator_id) VALUES (?,?,?,'已完成','检查员提交检查记录',?)",
+                idService.next("HIS"), taskId, "进行中", currentUserId());
     }
 
     private String normalizeType(String type) {

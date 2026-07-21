@@ -14,7 +14,7 @@
       <el-table-column prop="bridge_name" label="桥梁名称" min-width="170" />
       <el-table-column prop="report_id" label="报告编号" width="150" />
       <el-table-column prop="task_id" label="任务编号" width="130" />
-      <el-table-column prop="report_type" label="报告类型" width="160" />
+      <el-table-column prop="report_type" label="报告类型" width="160"><template #default="{row}">{{ reportTypeName(row.report_type) }}</template></el-table-column>
       <el-table-column prop="version_no" label="版本" width="100" />
       <el-table-column prop="file_format" label="格式" width="90" />
       <el-table-column prop="report_status" label="状态" width="110" />
@@ -108,7 +108,7 @@ async function openGenerate() {
   await loadTasks()
 }
 
-function syncReportType(){form.reportType=selectedTask.value?.inspection_type==='periodic'?'periodic_record':'initial_record'}
+function reportTypeName(type){return{bridge_card:'桥梁基本状况卡片',initial_record:'初始检查记录表',periodic_record:'定期检查记录表',bridge_summary:'检查趋势与对比'}[type]||type}
 async function loadTasks(){const data=await http.get('/tasks',{params:{page:1,size:100,inspection_type:inspectionType.value||undefined}});taskOptions.value=data.records;if(!form.taskId&&data.records.length)form.taskId=data.records[0].task_id;syncReportType()}
 
 async function generate() {

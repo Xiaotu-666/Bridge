@@ -110,7 +110,7 @@
               <div class="section-title"><div><span>FILES</span><h3>检查报告与附件</h3></div><el-tag type="info" effect="plain">{{ detail.reports.length + detail.attachments.length }} 份</el-tag></div>
               <div class="file-list">
                 <button v-for="report in detail.reports" :key="report.report_id" type="button" class="file-row" @click="downloadReport(report)">
-                  <FileText :size="18" /><span><b>{{ report.report_id }}</b><small>{{ report.report_type }} · {{ report.version_no }} · {{ report.report_status }}</small></span><Download :size="17" />
+                  <FileText :size="18" /><span><b>{{ report.report_id }}</b><small>{{ reportTypeLabel(report.report_type) }} · {{ report.version_no }} · {{ report.report_status }}</small></span><Download :size="17" />
                 </button>
                 <div v-for="file in detail.attachments" :key="file.file_id" class="file-row attachment-row">
                   <Paperclip :size="18" /><span><b>{{ file.file_name }}</b><small>{{ file.file_description || file.photo_category || '检查附件' }} · {{ formatBytes(file.file_size) }}</small></span>
@@ -226,6 +226,7 @@ async function downloadReport(report) {
   link.click()
   URL.revokeObjectURL(url)
 }
+function reportTypeLabel(type){return{bridge_card:'桥梁基本状况卡片',initial_record:'初始检查记录表',periodic_record:'定期检查记录表',bridge_summary:'检查趋势与对比'}[type]||type}
 
 function statusName(value) { return { pending: '待审核', archived: '已归档', rejected: '已打回', draft: '草稿' }[value] || value || '未提交' }
 function statusType(value) { return value === 'archived' ? 'success' : value === 'rejected' ? 'danger' : 'warning' }
