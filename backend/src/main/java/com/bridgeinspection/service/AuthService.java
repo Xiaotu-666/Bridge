@@ -60,7 +60,8 @@ public class AuthService {
                 permissions(userRow.get("permission_set"))
         );
         jdbcTemplate.update("UPDATE tb_user SET last_login_time = CURRENT_TIMESTAMP WHERE user_id = ?", userId);
-        return new LoginResponse(jwtService.createToken(user), user, homePath(user.roles().get(0)));
+        boolean forcePwd = ((Number) userRow.getOrDefault("force_pwd_change", 0)).intValue() == 1;
+        return new LoginResponse(jwtService.createToken(user), user, homePath(user.roles().get(0)), forcePwd);
     }
 
     public RegisterResponse register(RegisterRequest request) {

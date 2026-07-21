@@ -37,8 +37,10 @@ public class AuthController {
     }
 
     @PostMapping("/register")
-    public ApiResponse<RegisterResponse> register(@Valid @RequestBody RegisterRequest request) {
-        return ApiResponse.ok(authService.register(request));
+    public ApiResponse<RegisterResponse> register(@Valid @RequestBody RegisterRequest request, HttpServletRequest httpRequest) {
+        RegisterResponse response = authService.register(request);
+        logService.log(httpRequest, "system", "注册", "tb_user", String.valueOf(response.userId()), "用户注册", true);
+        return ApiResponse.ok(response);
     }
 
     @GetMapping("/me")

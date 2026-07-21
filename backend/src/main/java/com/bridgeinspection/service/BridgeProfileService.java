@@ -90,16 +90,27 @@ public final class BridgeProfileService {
         List<Map<String, Object>> periodicInspections = jdbcTemplate.queryForList(
                 "SELECT pi.*,rl.rating_level_name FROM tb_periodic_inspection pi LEFT JOIN tb_rating_level rl ON rl.rating_level_code=pi.rating_level_code " +
                         "WHERE pi.bridge_code=? ORDER BY pi.inspection_date DESC", bridgeCode);
-        List<Map<String, Object>> periodicCards = new java.util.ArrayList<>();
-        for (Map<String, Object> inspection : periodicInspections) {
-            Map<String, Object> card = new LinkedHashMap<>(inspection);
-            String periodicCode = String.valueOf(inspection.get("periodic_inspection_code"));
-            List<Map<String, Object>> componentRows = jdbcTemplate.queryForList(
+        List<String> periodicCodes = periodicInspections.stream()
+                .map(row -> String.valueOf(row.get("periodic_inspection_code"))).toList();
+        Map<String, List<Map<String, Object>>> componentMap = new java.util.LinkedHashMap<>();
+        if (!periodicCodes.isEmpty()) {
+            String placeholders = periodicCodes.stream().map(code -> "?").reduce((a, b) -> a + "," + b).orElse("");
+            List<Map<String, Object>> allRows = jdbcTemplate.queryForList(
                     "SELECT ci.*,sc.component_serial,sc.location_desc,sc.material_type,sc.dimension_spec,p.part_name,c.component_name,dd.defect_degree_name " +
                             "FROM tb_component_inspection ci LEFT JOIN tb_bridge_specific_component sc ON sc.bridge_component_id=ci.bridge_component_id " +
                             "LEFT JOIN tb_part p ON p.part_code=ci.part_code LEFT JOIN tb_component c ON c.component_code=ci.component_code " +
                             "LEFT JOIN tb_defect_degree dd ON dd.defect_degree_code=ci.defect_degree_code " +
-                            "WHERE ci.periodic_inspection_code=? ORDER BY p.sort_order,c.component_name,sc.component_serial", periodicCode);
+                            "WHERE ci.periodic_inspection_code IN (" + placeholders + ") ORDER BY p.sort_order,c.component_name,sc.component_serial",
+                    periodicCodes.toArray());
+            for (Map<String, Object> row : allRows) {
+                componentMap.computeIfAbsent(String.valueOf(row.get("periodic_inspection_code")), k -> new java.util.ArrayList<>()).add(row);
+            }
+        }
+        List<Map<String, Object>> periodicCards = new java.util.ArrayList<>();
+        for (Map<String, Object> inspection : periodicInspections) {
+            Map<String, Object> card = new LinkedHashMap<>(inspection);
+            String periodicCode = String.valueOf(inspection.get("periodic_inspection_code"));
+            List<Map<String, Object>> componentRows = componentMap.getOrDefault(periodicCode, List.of());
             card.put("componentInspections", componentRows);
             long defectCount = componentRows.stream().filter(row -> row.get("defect_type") != null
                     && !String.valueOf(row.get("defect_type")).contains("未见明显缺损")).count();

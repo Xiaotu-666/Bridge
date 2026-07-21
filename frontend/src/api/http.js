@@ -30,6 +30,7 @@ http.interceptors.response.use(
     const message = error.response?.data?.message || error.response?.data?.error || error.message || '网络错误'
     if (error.response?.status === 401) {
       localStorage.removeItem('bridge_token')
+      localStorage.removeItem('bridge_user')
       window.location.href = '/login'
     } else {
       ElMessage.error(message)

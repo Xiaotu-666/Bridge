@@ -95,12 +95,31 @@ public class InspectionWorkbenchService {
             recordCode = savePeriodicRecord(task, record);
             for (Map<String, Object> row : rows) savePeriodicRow(recordCode, row);
         }
-        if (finalize) completeTask(taskId);
+        if (finalize) {
+            saveEvaluationHistory(task, record, normalized);
+            completeTask(taskId);
+        }
         else startTask(taskId);
         Map<String, Object> result = task(normalized, taskId);
         result.put("savedRecordCode", recordCode);
         result.put("submitted", finalize);
         return result;
+    }
+
+    private void saveEvaluationHistory(Map<String, Object> task, Map<String, Object> record, String type) {
+        String bridgeCode = String.valueOf(task.get("bridge_code"));
+        String categoryCode = "initial".equals(type) ? "initial" : "periodic";
+        String date = value(record, "inspection_date", "inspectionDate");
+        if (date.isBlank()) date = LocalDate.now().toString();
+        String rating = "initial".equals(type) ? "完成初始检查" : nullable(record, "rating_level_code", "ratingLevelCode");
+        String conclusion = nullable(record, "defect_advice", "defectAdvice");
+        if (conclusion == null && !"initial".equals(type)) conclusion = nullable(record, "special_conclusion", "specialConclusion");
+        String nextCheck = nullable(record, "next_inspection_date", "nextInspectionDate");
+        if (!"initial".equals(type) && nextCheck == null) nextCheck = nullable(record, "nextInspectionDate");
+        jdbcTemplate.update("DELETE FROM tb_evaluation_history WHERE bridge_code=? AND check_category_code=? AND evaluation_date=? AND rating_result=?",
+                bridgeCode, categoryCode, date, rating);
+        jdbcTemplate.update("INSERT INTO tb_evaluation_history (bridge_code,check_category_code,evaluation_date,rating_result,special_conclusion,next_check_date) VALUES (?,?,?,?,?,?)",
+                bridgeCode, categoryCode, date, rating, conclusion, nextCheck);
     }
 
     private String saveInitialRecord(Map<String, Object> task, Map<String, Object> record) {
@@ -113,29 +132,33 @@ public class InspectionWorkbenchService {
         String date = value(record, "inspection_date", "inspectionDate");
         if (date.isBlank()) date = LocalDate.now().toString();
         if (existing == null) {
+            Integer nextVersion = jdbcTemplate.queryForObject(
+                    "SELECT COALESCE(MAX(version_no),0)+1 FROM tb_initial_inspection WHERE bridge_code=?", Integer.class, bridgeCode);
+            jdbcTemplate.update("UPDATE tb_initial_inspection SET effective_flag=0 WHERE bridge_code=?", bridgeCode);
             jdbcTemplate.update("""
                     INSERT INTO tb_initial_inspection
-                    (initial_inspection_code,task_id,bridge_code,inspection_date,inspection_org,inspectors,
+                    (initial_inspection_code,task_id,bridge_code,inspection_date,next_inspection_date,inspection_org,inspectors,
                      bridge_engineer,weather_temperature,main_span_structure,maximum_span,span_combination,
                      structure_form,construction_method,construction_rework,reinforcement_info,
-                     missing_archive_drawings,defect_advice,status,effective_flag,record_form_no,create_by)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                    """, code, taskId, bridgeCode, date, nullable(record, "inspection_org", "inspectionOrg"),
+                     missing_archive_drawings,defect_advice,version_no,effective_flag,status,record_form_no,create_by)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    """, code, taskId, bridgeCode, date, nullable(record, "next_inspection_date", "nextInspectionDate"), nullable(record, "inspection_org", "inspectionOrg"),
                     nullable(record, "inspectors"), bridgeEngineer,
                     nullable(record, "weather_temperature", "weatherTemperature"), nullable(record, "main_span_structure", "mainSpanStructure"),
                     decimalOrNull(record, "maximum_span", "maximumSpan"), nullable(record, "span_combination", "spanCombination"),
                     nullable(record, "structure_form", "structureForm"), nullable(record, "construction_method", "constructionMethod"),
                     nullable(record, "construction_rework", "constructionRework"), nullable(record, "reinforcement_info", "reinforcementInfo"),
                     nullable(record, "missing_archive_drawings", "missingArchiveDrawings"), nullable(record, "defect_advice", "defectAdvice"),
-                    nullable(record, "status"), numberOrDefault(record, 1, "effective_flag", "effectiveFlag"),
+                    nextVersion == null ? 1 : nextVersion, 1,
+                    nullable(record, "status"),
                     "B-" + date.replace("-", "") + "-" + bridgeCode + "-" + code, userIdInt());
         } else {
             jdbcTemplate.update("""
-                    UPDATE tb_initial_inspection SET inspection_date=?,inspection_org=?,inspectors=?,bridge_engineer=?,
+                    UPDATE tb_initial_inspection SET inspection_date=?,next_inspection_date=?,inspection_org=?,inspectors=?,bridge_engineer=?,
                     weather_temperature=?,main_span_structure=?,maximum_span=?,span_combination=?,structure_form=?,
                     construction_method=?,construction_rework=?,reinforcement_info=?,missing_archive_drawings=?,
                     defect_advice=?,status=?,effective_flag=?,update_time=CURRENT_TIMESTAMP WHERE task_id=?
-                    """, date, nullable(record, "inspection_org", "inspectionOrg"), nullable(record, "inspectors"),
+                    """, date, nullable(record, "next_inspection_date", "nextInspectionDate"), nullable(record, "inspection_org", "inspectionOrg"), nullable(record, "inspectors"),
                     bridgeEngineer, nullable(record, "weather_temperature", "weatherTemperature"),
                     nullable(record, "main_span_structure", "mainSpanStructure"), decimalOrNull(record, "maximum_span", "maximumSpan"),
                     nullable(record, "span_combination", "spanCombination"), nullable(record, "structure_form", "structureForm"),
@@ -245,6 +268,7 @@ public class InspectionWorkbenchService {
         String partCode = nullable(row, "defect_part_code", "partCode");
         if (partCode == null) partCode = nullable(definition, "applicable_part_code");
         if (existing == null) {
+            jdbcTemplate.update("DELETE FROM tb_defect WHERE initial_inspection_code=? AND defect_definition_code=? AND component_inspection_id IS NULL", inspectionCode, definitionCode);
             jdbcTemplate.update("""
                     INSERT INTO tb_defect
                     (bridge_code,initial_inspection_code,defect_definition_code,defect_part_code,defect_type,defect_nature,
@@ -265,6 +289,7 @@ public class InspectionWorkbenchService {
         Object[] values = defectValues(definition, row);
         String partCode = nullable(row, "part_code", "partCode");
         if (existing == null) {
+            jdbcTemplate.update("DELETE FROM tb_defect WHERE periodic_inspection_code=? AND defect_definition_code=? AND component_inspection_id=?", inspectionCode, definitionCode, componentInspectionId);
             jdbcTemplate.update("""
                     INSERT INTO tb_defect
                     (bridge_code,periodic_inspection_code,component_inspection_id,defect_definition_code,defect_part_code,
@@ -383,7 +408,7 @@ public class InspectionWorkbenchService {
     private Map<String, Object> bridge(String bridgeCode) {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
                 SELECT b.bridge_code,b.bridge_name,b.bridge_type_code,bt.bridge_type_name,b.route_code,
-                       r.route_name FROM tb_bridge b LEFT JOIN tb_bridge_type bt ON bt.bridge_type_code=b.bridge_type_code
+                       b.bridge_engineer,r.route_name FROM tb_bridge b LEFT JOIN tb_bridge_type bt ON bt.bridge_type_code=b.bridge_type_code
                 LEFT JOIN tb_route r ON r.route_code=b.route_code WHERE b.bridge_code=?
                 """, bridgeCode);
         if (rows.isEmpty()) throw new BusinessException("桥梁不存在");

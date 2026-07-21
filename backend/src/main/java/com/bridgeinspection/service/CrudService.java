@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
@@ -242,10 +243,22 @@ public class CrudService {
             throw new BusinessException("该资源不允许删除");
         }
         if ("tasks".equals(resource)) { deleteTask(id); return; }
+        if ("users".equals(resource)) {
+            Long currentUserId = SecurityUtils.currentUserIdLong();
+            if (currentUserId != null && currentUserId.toString().equals(id)) {
+                throw new BusinessException("不能删除自己的账号");
+            }
+            Long adminCount = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM tb_user u JOIN tb_role r ON r.role_id=u.role_id WHERE r.role_code='admin' AND u.is_deleted=0 AND u.user_id<>?", Long.class, id);
+            if (adminCount != null && adminCount == 0) {
+                throw new BusinessException("不能删除最后一个管理员账号");
+            }
+        }
         if ("routes".equals(resource)) assertRouteUnused(id);
         if ("bridge-types".equals(resource)) deleteBridgeType(id);
         if ("bridge-positions".equals(resource)) deleteBridgePosition(id);
         if ("bridge-components".equals(resource)) deleteBridgeComponent(id);
+        if ("bridges".equals(resource)) assertBridgeUnused(id);
         Set<String> columns = columns(config);
         if (columns.contains("is_deleted")) {
             jdbcTemplate.update("UPDATE `" + config.tableName() + "` SET is_deleted = 1 WHERE `" + config.idColumn() + "` = ?", id);
@@ -372,11 +385,17 @@ public class CrudService {
             values.putIfAbsent("version_no", "V1.0");
         }
         if ("users".equals(config.resourceName()) && create) {
-            values.putIfAbsent("password", "admin123");
+            values.putIfAbsent("password", generateDefaultPassword());
             values.putIfAbsent("user_status", 1);
             values.putIfAbsent("force_pwd_change", 1);
         }
         if ("users".equals(config.resourceName())) validateUserValues(values);
+        if ("users".equals(config.resourceName()) && !create) {
+            Long selfId = SecurityUtils.currentUserIdLong();
+            if (selfId != null && selfId.toString().equals(String.valueOf(values.get("user_id")))) {
+                throw new BusinessException("不能修改自己的账号信息");
+            }
+        }
         if ("roles".equals(config.resourceName())) applyRoleTemplate(values);
         if ("bridge-positions".equals(config.resourceName()) && create && columns.contains("sort_order")) {
             Integer next = jdbcTemplate.queryForObject("SELECT COALESCE(MAX(sort_order), 0) + 1 FROM tb_part", Integer.class);
@@ -394,12 +413,29 @@ public class CrudService {
             jdbcTemplate.update("UPDATE tb_initial_inspection SET effective_flag=0 WHERE bridge_code=?", bridgeCode);
             values.put("version_no", nextVersion == null ? 1 : nextVersion);
             values.put("effective_flag", 1);
+            upsertEvaluation(bridgeCode, "initial", values);
         }
         if ("periodic-inspections".equals(config.resourceName()) && create && values.get("bridge_code") != null) {
             String bridgeType = jdbcTemplate.queryForObject("SELECT bridge_type_code FROM tb_bridge WHERE bridge_code=?",
                     String.class, values.get("bridge_code"));
             values.put("form_table_code", periodicTableCode(bridgeType));
+            String bridgeCode = String.valueOf(values.get("bridge_code"));
+            upsertEvaluation(bridgeCode, "periodic", values);
         }
+    }
+
+    private void upsertEvaluation(String bridgeCode, String categoryCode, Map<String, Object> values) {
+        String date = values.containsKey("inspection_date") ? String.valueOf(values.get("inspection_date")) : java.time.LocalDate.now().toString();
+        String rating = "initial".equals(categoryCode) ? "完成初始检查" : String.valueOf(values.getOrDefault("rating_level_code", ""));
+        String conclusion = String.valueOf(values.getOrDefault("defect_advice", values.getOrDefault("special_conclusion", "")));
+        String nextCheck = String.valueOf(values.getOrDefault("next_inspection_date", ""));
+        if ("null".equals(rating)) rating = "";
+        if ("null".equals(conclusion)) conclusion = "";
+        if ("null".equals(nextCheck)) nextCheck = "";
+        jdbcTemplate.update("DELETE FROM tb_evaluation_history WHERE bridge_code=? AND check_category_code=? AND evaluation_date=? AND rating_result=?",
+                bridgeCode, categoryCode, date, rating);
+        jdbcTemplate.update("INSERT INTO tb_evaluation_history (bridge_code,check_category_code,evaluation_date,rating_result,special_conclusion,next_check_date) VALUES (?,?,?,?,?,?)",
+                bridgeCode, categoryCode, date, rating, conclusion.isBlank() ? null : conclusion, nextCheck.isBlank() ? null : nextCheck);
     }
 
     private Set<String> columns(ResourceConfig config) {
@@ -513,6 +549,17 @@ public class CrudService {
                 WHERE b.bridge_code=?
                 """, bridgeCode);
         if (!bridges.isEmpty()) row.putAll(bridges.get(0));
+    }
+
+    private void assertBridgeUnused(String bridgeCode) {
+        long inspections = count("SELECT COUNT(*) FROM tb_initial_inspection WHERE bridge_code=?", bridgeCode);
+        if (inspections > 0) throw new BusinessException("该桥梁已关联 " + inspections + " 份初始检查记录，不能删除。");
+        long periodics = count("SELECT COUNT(*) FROM tb_periodic_inspection WHERE bridge_code=?", bridgeCode);
+        if (periodics > 0) throw new BusinessException("该桥梁已关联 " + periodics + " 份定期检查记录，不能删除。");
+        long tasks = count("SELECT COUNT(*) FROM tb_inspection_task WHERE bridge_code=?", bridgeCode);
+        if (tasks > 0) throw new BusinessException("该桥梁已关联 " + tasks + " 个检查任务，不能删除。");
+        long reports = count("SELECT COUNT(*) FROM tb_report WHERE bridge_code=?", bridgeCode);
+        if (reports > 0) throw new BusinessException("该桥梁已关联 " + reports + " 份报告，不能删除。");
     }
 
     private void assertRouteUnused(String routeCode) {
@@ -647,6 +694,10 @@ public class CrudService {
         normalizeBinary(values, "force_pwd_change", 1);
     }
 
+    private String generateDefaultPassword() {
+        return UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+    }
+
     private void normalizeBinary(Map<String, Object> values, String field, int defaultValue) {
         if (!values.containsKey(field)) return;
         String raw = String.valueOf(values.get(field));
@@ -708,7 +759,9 @@ public class CrudService {
                 new ResourceConfig("reports", "tb_report", "report_id", "REP", List.of("task_id", "report_type", "version_no", "report_status"), false),
                 new ResourceConfig("archive-records", "tb_bridge_archive_record", "archive_record_id", null, List.of("bridge_code", "archive_item_code", "completeness_status"), false),
                 new ResourceConfig("attachments", "tb_attachment", "file_id", null, List.of("file_name", "file_type", "file_description"), false),
-                new ResourceConfig("backups", "tb_backup_record", "backup_id", null, List.of("file_name", "backup_status"), true)
+                new ResourceConfig("backups", "tb_backup_record", "backup_id", null, List.of("file_name", "backup_status"), true),
+                new ResourceConfig("archive-items", "tb_archive_item", "archive_item_code", null, List.of("archive_item_code", "archive_item_name"), true),
+                new ResourceConfig("evaluation-history", "tb_evaluation_history", "evaluation_id", null, List.of("bridge_code", "check_category_code", "evaluation_date"), false)
         );
         Map<String, ResourceConfig> map = new LinkedHashMap<>();
         for (ResourceConfig config : list) {

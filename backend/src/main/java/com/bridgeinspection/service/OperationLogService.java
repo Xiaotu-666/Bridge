@@ -38,8 +38,12 @@ public class OperationLogService {
         }
         String forwarded = request.getHeader("X-Forwarded-For");
         if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();
+            String ip = forwarded.split(",")[0].trim();
+            if (ip.startsWith("::ffff:")) ip = ip.substring(7);
+            return ip;
         }
-        return request.getRemoteAddr();
+        String remote = request.getRemoteAddr();
+        if (remote.startsWith("::ffff:")) remote = remote.substring(7);
+        return remote.equals("0:0:0:0:0:0:0:1") ? "127.0.0.1" : remote;
     }
 }

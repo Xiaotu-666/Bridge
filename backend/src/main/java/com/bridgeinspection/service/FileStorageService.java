@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -29,11 +30,19 @@ public class FileStorageService {
         if (file == null || file.isEmpty()) {
             throw new BusinessException("上传文件不能为空");
         }
+        String contentType = file.getContentType() == null ? "" : file.getContentType().toLowerCase(Locale.ROOT);
         String original = file.getOriginalFilename() == null ? "file" : file.getOriginalFilename();
         String suffix = "";
         int dot = original.lastIndexOf('.');
         if (dot >= 0) {
             suffix = original.substring(dot).toLowerCase(Locale.ROOT);
+        }
+        if (!contentType.startsWith("image/") && !contentType.startsWith("application/") && !contentType.isEmpty()) {
+            throw new BusinessException("不支持的文件类型：" + contentType);
+        }
+        Set<String> allowedExtensions = Set.of(".jpg", ".jpeg", ".png", ".gif", ".bmp", ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".txt", ".csv", ".json", ".xml");
+        if (!suffix.isEmpty() && !allowedExtensions.contains(suffix)) {
+            throw new BusinessException("不支持的文件扩展名：" + suffix);
         }
         String date = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
         String safeCategory = category == null || category.isBlank() ? "common" : category.replaceAll("[^A-Za-z0-9_-]", "");

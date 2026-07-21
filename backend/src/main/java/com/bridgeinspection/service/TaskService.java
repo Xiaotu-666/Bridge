@@ -50,8 +50,20 @@ public class TaskService {
                     WHERE t.bridge_code=p.bridge_code AND t.inspection_type='periodic'
                       AND t.task_status IN ('待分配','进行中')
                   )
-                ORDER BY p.next_inspection_date,p.bridge_code
-                """, cutoff);
+                UNION ALL
+                SELECT i.bridge_code,NULL AS periodic_inspection_code,i.next_inspection_date
+                FROM tb_initial_inspection i
+                WHERE i.effective_flag=1 AND i.next_inspection_date IS NOT NULL AND i.next_inspection_date<=?
+                  AND NOT EXISTS (
+                    SELECT 1 FROM tb_periodic_inspection p WHERE p.bridge_code=i.bridge_code
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1 FROM tb_inspection_task t
+                    WHERE t.bridge_code=i.bridge_code AND t.inspection_type='periodic'
+                      AND t.task_status IN ('待分配','进行中')
+                  )
+                ORDER BY next_inspection_date,bridge_code
+                """, cutoff, cutoff);
         int created = 0;
         for (Map<String, Object> candidate : candidates) {
             LocalDate dueDate = LocalDate.parse(String.valueOf(candidate.get("next_inspection_date")));
@@ -59,12 +71,14 @@ public class TaskService {
             String taskId = idService.next("JC");
             String bridgeCode = String.valueOf(candidate.get("bridge_code"));
             String sourceRecord = String.valueOf(candidate.get("periodic_inspection_code"));
+            String remark = sourceRecord == null || "null".equals(sourceRecord)
+                    ? "系统根据初始检查的下次检查日期自动生成首次定期检查任务"
+                    : "系统根据上次定期检查 " + sourceRecord + " 的下次检查日期自动生成";
             jdbcTemplate.update("""
                     INSERT INTO tb_inspection_task
                     (task_id,bridge_code,inspection_type,inspection_level,plan_start_date,plan_end_date,task_status,remarks,creator_id)
                     VALUES (?,?, 'periodic','Ⅰ',?,?, '待分配',?,?)
-                    """, taskId, bridgeCode, startDate, dueDate,
-                    "系统根据上次定期检查 " + sourceRecord + " 的下次检查日期自动生成", creatorId);
+                    """, taskId, bridgeCode, startDate, dueDate, remark, creatorId);
             jdbcTemplate.update("""
                     INSERT INTO tb_task_status_history
                     (history_id,task_id,from_status,to_status,opinion,operator_id)

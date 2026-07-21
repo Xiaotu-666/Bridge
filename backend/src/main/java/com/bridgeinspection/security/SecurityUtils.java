@@ -20,6 +20,12 @@ public final class SecurityUtils {
         return user == null ? null : user.userId();
     }
 
+    public static Long currentUserIdLong() {
+        String id = currentUserId();
+        if (id == null) return null;
+        try { return Long.valueOf(id); } catch (NumberFormatException e) { return null; }
+    }
+
     public static String currentUserName() {
         AuthenticatedUser user = currentUserOrNull();
         return user == null ? null : user.userName();

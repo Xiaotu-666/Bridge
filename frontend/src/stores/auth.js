@@ -8,7 +8,7 @@ export const useAuthStore = defineStore('auth', {
     role: (state) => state.user?.roles?.[0] || '', homePath: (state) => homes[state.user?.roles?.[0]] || '/login'
   },
   actions: {
-    async login(account, password) { const data=await http.post('/auth/login',{account,password});this.token=data.token;this.user=data.user;localStorage.setItem('bridge_token',data.token);localStorage.setItem('bridge_user',JSON.stringify(data.user));return data.homePath },
+    async login(account, password) { const data=await http.post('/auth/login',{account,password});this.token=data.token;this.user=data.user;localStorage.setItem('bridge_token',data.token);localStorage.setItem('bridge_user',JSON.stringify(data.user));if(data.forcePwdChange)return'/change-password';return data.homePath },
     logout(){this.token='';this.user=null;localStorage.removeItem('bridge_token');localStorage.removeItem('bridge_user')},
     can(permission){return this.role==='admin'||this.permissions.includes('*')||this.permissions.includes(permission)}
   }

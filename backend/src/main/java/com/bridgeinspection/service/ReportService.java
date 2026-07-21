@@ -384,15 +384,21 @@ public class ReportService {
         structure.append(subsection("35 桥梁分孔（根据孔数设置列数）")).append(dataTable(
                 new String[]{"孔号", "跨径（m）", "结构形式", "材料"}, spans,
                 "span_no", "span_length", "structure_form", "material_type"));
+        String[] structHeaders = new String[]{"结构类型", "编号", "形式", "材料", "数量"};
+        String[] structKeys = new String[]{"structure_type", "serial_no", "form", "material_type", "quantity"};
         structure.append(subsection("36—41 上部结构形式与材料（按种类设置列数）")).append(dataTable(
-                new String[]{"分组", "结构类型", "编号", "形式", "材料", "数量"}, structures,
-                "structure_group", "structure_type", "serial_no", "form", "material_type", "quantity"));
+                structHeaders, filterByGroup(structures, "superstructure"), structKeys));
+        structure.append(subsection("桥面系形式与材料（A表45-49）")).append(dataTable(
+                structHeaders, filterByGroup(structures, "deck"), structKeys));
+        structure.append(subsection("下部结构形式与材料（A表50-53）")).append(dataTable(
+                structHeaders, filterByGroup(structures, "substructure"), structKeys));
+        structure.append(subsection("基础形式与材料（A表54-55）")).append(dataTable(
+                structHeaders, filterByGroup(structures, "foundation"), structKeys));
+        structure.append(subsection("支座形式与材料（A表56-59）")).append(dataTable(
+                structHeaders, filterByGroup(structures, "bearing_facility"), structKeys));
         structure.append(subsection("42—44 斜拉索、吊杆、系杆（按索数设置列数，含索力）")).append(dataTable(
                 new String[]{"类型", "编号", "索力/内力", "材料"}, cables,
                 "cable_type", "serial_no", "force_value", "material_type"));
-        structure.append(subsection("45—59 桥面系、下部结构、基础、支座及附属设施")).append(dataTable(
-                new String[]{"部位", "部件", "编号", "位置", "材料", "尺寸/规格", "数量"}, components,
-                "part_name", "component_name", "component_serial", "location_desc", "material_type", "dimension_spec", "quantity"));
         html.append(cardSection("D", "桥梁结构信息", structure.toString()));
         html.append(cardSection("E（60—71）", "桥梁档案资料", dataTable(
                 new String[]{"档案资料项", "齐全状态", "说明"}, archives,
@@ -586,6 +592,10 @@ public class ReportService {
     private String curveRadius(Object value) {
         String text = string(value);
         return text.isBlank() || "null".equalsIgnoreCase(text) ? "∞" : text;
+    }
+
+    private List<Map<String, Object>> filterByGroup(List<Map<String, Object>> rows, String group) {
+        return rows.stream().filter(row -> group.equals(String.valueOf(row.get("structure_group")))).toList();
     }
 
     private String string(Object value) { return value == null ? "" : String.valueOf(value); }
