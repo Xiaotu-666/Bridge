@@ -106,6 +106,8 @@ public class InspectionWorkbenchService {
     private String saveInitialRecord(Map<String, Object> task, Map<String, Object> record) {
         String taskId = String.valueOf(task.get("task_id"));
         String bridgeCode = String.valueOf(task.get("bridge_code"));
+        String bridgeEngineer = jdbcTemplate.queryForObject(
+                "SELECT bridge_engineer FROM tb_bridge WHERE bridge_code = ?", String.class, bridgeCode);
         Map<String, Object> existing = queryOptional("SELECT * FROM tb_initial_inspection WHERE task_id=?", taskId);
         String code = existing == null ? idService.next("QI") : string(existing.get("initial_inspection_code"));
         String date = value(record, "inspection_date", "inspectionDate");
@@ -119,7 +121,7 @@ public class InspectionWorkbenchService {
                      missing_archive_drawings,defect_advice,status,effective_flag,record_form_no,create_by)
                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """, code, taskId, bridgeCode, date, nullable(record, "inspection_org", "inspectionOrg"),
-                    nullable(record, "inspectors"), nullable(record, "bridge_engineer", "bridgeEngineer"),
+                    nullable(record, "inspectors"), bridgeEngineer,
                     nullable(record, "weather_temperature", "weatherTemperature"), nullable(record, "main_span_structure", "mainSpanStructure"),
                     decimalOrNull(record, "maximum_span", "maximumSpan"), nullable(record, "span_combination", "spanCombination"),
                     nullable(record, "structure_form", "structureForm"), nullable(record, "construction_method", "constructionMethod"),
@@ -134,7 +136,7 @@ public class InspectionWorkbenchService {
                     construction_method=?,construction_rework=?,reinforcement_info=?,missing_archive_drawings=?,
                     defect_advice=?,status=?,effective_flag=?,update_time=CURRENT_TIMESTAMP WHERE task_id=?
                     """, date, nullable(record, "inspection_org", "inspectionOrg"), nullable(record, "inspectors"),
-                    nullable(record, "bridge_engineer", "bridgeEngineer"), nullable(record, "weather_temperature", "weatherTemperature"),
+                    bridgeEngineer, nullable(record, "weather_temperature", "weatherTemperature"),
                     nullable(record, "main_span_structure", "mainSpanStructure"), decimalOrNull(record, "maximum_span", "maximumSpan"),
                     nullable(record, "span_combination", "spanCombination"), nullable(record, "structure_form", "structureForm"),
                     nullable(record, "construction_method", "constructionMethod"), nullable(record, "construction_rework", "constructionRework"),

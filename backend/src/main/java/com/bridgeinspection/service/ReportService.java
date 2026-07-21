@@ -21,6 +21,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @Service
 public class ReportService {
@@ -57,6 +58,67 @@ public class ReportService {
         Map<String, Object> bridge = bridge(bridgeCode);
         return createPdfRecord(null, "bridge_card", "生成桥梁基本状况卡片", bridge,
                 new InspectionContext(null, null, "A", null, List.of()));
+    }
+
+    @Transactional
+    public Map<String, Object> generateInitialRecord(String bridgeCode) {
+        Map<String, Object> bridge = bridge(bridgeCode);
+        Map<String, Object> record = queryOne(
+                "SELECT * FROM tb_initial_inspection WHERE bridge_code=? ORDER BY effective_flag DESC,inspection_date DESC LIMIT 1", bridgeCode);
+        if (record == null) throw new BusinessException("该桥梁没有初始检查记录");
+        String code = String.valueOf(record.get("initial_inspection_code"));
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT d.item_category,d.item_name,i.measured_value,d.unit,i.inspection_description
+                FROM tb_initial_inspection_item i JOIN tb_initial_inspection_item_definition d ON d.item_code=i.item_code
+                WHERE i.initial_inspection_code=? ORDER BY d.item_category,d.item_code
+                """, code);
+        return createPdfRecord(null, "initial_record", "生成桥梁初始检查记录表", bridge,
+                new InspectionContext(code, null, "B", record, rows));
+    }
+
+    @Transactional
+    public Map<String, Object> generatePeriodicRecord(String bridgeCode, String periodicCode) {
+        Map<String, Object> bridge = bridge(bridgeCode);
+        Map<String, Object> record = queryOne(
+                "SELECT p.*,r.rating_level_name FROM tb_periodic_inspection p LEFT JOIN tb_rating_level r ON r.rating_level_code=p.rating_level_code WHERE p.periodic_inspection_code=?", periodicCode);
+        if (record == null) throw new BusinessException("定期检查记录不存在");
+        String tableCode = tableCode(String.valueOf(bridge.get("bridge_type_code")));
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
+                SELECT p.part_name,c.component_name,ci.score,ci.defect_type,ci.defect_location,ci.defect_range,
+                       ci.worst_component,ci.maintenance_advice,ci.special_check_required
+                FROM tb_bridge_type_component_config cfg
+                JOIN tb_part p ON p.part_code=cfg.part_code JOIN tb_component c ON c.component_code=cfg.component_code
+                LEFT JOIN tb_component_inspection ci ON ci.periodic_inspection_code=? AND ci.component_code=cfg.component_code
+                WHERE cfg.bridge_type_code=? AND cfg.active_flag=1 ORDER BY p.sort_order,cfg.display_order
+                """, periodicCode, bridge.get("bridge_type_code"));
+        return createPdfRecord(null, "periodic_record", "生成桥梁定期检查记录表", bridge,
+                new InspectionContext(null, periodicCode, tableCode, record, rows));
+    }
+
+@Transactional
+    public Map<String, Object> generateSummaryRecord(String bridgeCode) {
+        Map<String, Object> bridge = bridge(bridgeCode);
+        return createPdfRecord(null, "bridge_summary", "生成桥梁检查趋势与对比", bridge,
+                new InspectionContext(null, null, "Σ", null, List.of()));
+    }
+
+    private String summaryDocument(Map<String, Object> bridge) {
+        String bridgeCode = String.valueOf(bridge.get("bridge_code"));
+        List<Map<String, Object>> initials = jdbcTemplate.queryForList(
+                "SELECT inspection_date,initial_inspection_code,version_no,effective_flag FROM tb_initial_inspection WHERE bridge_code=? ORDER BY effective_flag DESC,inspection_date DESC", bridgeCode);
+        List<Map<String, Object>> periodics = jdbcTemplate.queryForList(
+                "SELECT p.inspection_date,p.periodic_inspection_code,rl.rating_level_name FROM tb_periodic_inspection p LEFT JOIN tb_rating_level rl ON rl.rating_level_code=p.rating_level_code WHERE p.bridge_code=? ORDER BY p.inspection_date DESC", bridgeCode);
+        StringBuilder html = new StringBuilder(officialHead("桥梁检查趋势与对比", bridge));
+        html.append("<table class='info-table' style='margin:12px 0'><tbody><tr><td class='label'>初始检查次数</td><td>").append(initials.size()).append("</td><td class='label'>定期检查次数</td><td>").append(periodics.size()).append("</td></tr></tbody></table>");
+        html.append("<div class='card-section'><div class='section'>1 历次初始检查</div><table class='data-table'><thead><tr><th>检查日期</th><th>初始检查编号</th><th>版本</th><th>有效状态</th></tr></thead><tbody>");
+        if (initials.isEmpty()) html.append("<tr><td class='empty' colspan='4'>暂无记录</td></tr>");
+        else for (Map<String, Object> row : initials) html.append("<tr><td>").append(esc(row.get("inspection_date"))).append("</td><td>").append(esc(row.get("initial_inspection_code"))).append("</td><td>").append(esc(row.get("version_no"))).append("</td><td>").append(esc(Objects.equals(1, row.get("effective_flag")) ? "当前有效" : "历史版本")).append("</td></tr>");
+        html.append("</tbody></table></div>");
+        html.append("<div class='card-section'><div class='section'>2 历次定期检查</div><table class='data-table'><thead><tr><th>检查日期</th><th>定期检查编号</th><th>技术状况等级</th></tr></thead><tbody>");
+        if (periodics.isEmpty()) html.append("<tr><td class='empty' colspan='3'>暂无记录</td></tr>");
+        else for (Map<String, Object> row : periodics) html.append("<tr><td>").append(esc(row.get("inspection_date"))).append("</td><td>").append(esc(row.get("periodic_inspection_code"))).append("</td><td>").append(esc(row.get("rating_level_name") != null ? row.get("rating_level_name") : "—")).append("</td></tr>");
+        html.append("</tbody></table></div>");
+        return html.toString();
     }
 
     public Resource loadReportFile(String reportId) {
@@ -146,6 +208,7 @@ public class ReportService {
         String body = switch (type) {
             case "initial_record" -> officialInitialDocument(bridge, context);
             case "periodic_record" -> officialPeriodicDocument(bridge, context);
+            case "bridge_summary" -> summaryDocument(bridge);
             default -> officialBridgeCardDocument(bridge);
         };
         String pageSize = "bridge_card".equals(type) ? "A4 landscape" : "A4 portrait";
@@ -304,7 +367,7 @@ public class ReportService {
                 "桥梁编号", bridge.get("bridge_code"), "桥梁名称", bridge.get("bridge_name"), "桥位桩号", bridge.get("pile_number"),
                 "功能类型", bridge.get("function_type"), "被跨道路（通道）", bridge.get("crossed_road_name"), "被跨道路桩号", bridge.get("crossed_road_pile"),
                 "养护等级", bridge.get("maintenance_level"), "设计荷载", bridge.get("design_load"), "桥梁坡度", bridge.get("bridge_slope"),
-                "平曲线半径", bridge.get("curve_radius"), "建成年份", bridge.get("built_year"), "设计单位", bridge.get("design_unit"),
+                "平曲线半径", curveRadius(bridge.get("curve_radius")), "建成年份", bridge.get("built_year"), "设计单位", bridge.get("design_unit"),
                 "施工单位", bridge.get("construction_unit"), "监理单位", bridge.get("supervision_unit"), "业主单位", bridge.get("owner_unit"),
                 "管养单位", bridge.get("management_unit"))));
         html.append(cardSection("C", "桥梁技术指标", keyValueTable(
@@ -316,20 +379,20 @@ public class ReportService {
 
         StringBuilder structure = new StringBuilder();
         structure.append(subsection("34 桥面高程（根据测点设置列数）")).append(dataTable(
-                new String[]{"测点编号", "测点名称", "基准高程（m）", "说明"}, measurementPoints,
-                "point_no", "point_name", "benchmark_elevation", "remark"));
+                new String[]{"测点编号", "测点名称", "基准高程（m）"}, measurementPoints,
+                "point_no", "point_name", "benchmark_elevation"));
         structure.append(subsection("35 桥梁分孔（根据孔数设置列数）")).append(dataTable(
-                new String[]{"孔号", "跨径（m）", "结构形式", "材料", "位置", "备注"}, spans,
-                "span_no", "span_length", "structure_form", "material_type", "location_desc", "remark"));
+                new String[]{"孔号", "跨径（m）", "结构形式", "材料"}, spans,
+                "span_no", "span_length", "structure_form", "material_type"));
         structure.append(subsection("36—41 上部结构形式与材料（按种类设置列数）")).append(dataTable(
-                new String[]{"分组", "结构类型", "编号", "形式", "材料", "数量", "位置", "备注"}, structures,
-                "structure_group", "structure_type", "serial_no", "form", "material_type", "quantity", "location_desc", "remark"));
+                new String[]{"分组", "结构类型", "编号", "形式", "材料", "数量"}, structures,
+                "structure_group", "structure_type", "serial_no", "form", "material_type", "quantity"));
         structure.append(subsection("42—44 斜拉索、吊杆、系杆（按索数设置列数，含索力）")).append(dataTable(
-                new String[]{"类型", "编号", "索力/内力", "材料", "位置", "备注"}, cables,
-                "cable_type", "serial_no", "force_value", "material_type", "location_desc", "remark"));
+                new String[]{"类型", "编号", "索力/内力", "材料"}, cables,
+                "cable_type", "serial_no", "force_value", "material_type"));
         structure.append(subsection("45—59 桥面系、下部结构、基础、支座及附属设施")).append(dataTable(
-                new String[]{"部位", "部件", "编号", "位置", "材料", "尺寸/规格", "数量", "备注"}, components,
-                "part_name", "component_name", "component_serial", "location_desc", "material_type", "dimension_spec", "quantity", "remark"));
+                new String[]{"部位", "部件", "编号", "位置", "材料", "尺寸/规格", "数量"}, components,
+                "part_name", "component_name", "component_serial", "location_desc", "material_type", "dimension_spec", "quantity"));
         html.append(cardSection("D", "桥梁结构信息", structure.toString()));
         html.append(cardSection("E（60—71）", "桥梁档案资料", dataTable(
                 new String[]{"档案资料项", "齐全状态", "说明"}, archives,
@@ -518,6 +581,11 @@ public class ReportService {
     private String compact(Object value) {
         String text = string(value);
         return text.isBlank() ? LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE) : text.replace("-", "");
+    }
+
+    private String curveRadius(Object value) {
+        String text = string(value);
+        return text.isBlank() || "null".equalsIgnoreCase(text) ? "∞" : text;
     }
 
     private String string(Object value) { return value == null ? "" : String.valueOf(value); }

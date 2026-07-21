@@ -1,0 +1,1 @@
+ALTER TABLE tb_bridge MODIFY COLUMN built_year INT DEFAULT NULL;

@@ -34,7 +34,7 @@
           <el-form-item label="检查日期"><el-date-picker v-model="record.inspection_date" value-format="YYYY-MM-DD" type="date" style="width:100%" /></el-form-item>
           <el-form-item v-if="isInitial" label="检查机构"><el-input v-model="record.inspection_org" /></el-form-item>
           <el-form-item v-if="isInitial" label="检查人员"><el-input v-model="record.inspectors" /></el-form-item>
-          <el-form-item v-if="isInitial" label="桥梁工程师"><el-input v-model="record.bridge_engineer" /></el-form-item>
+          <el-form-item v-if="isInitial" label="桥梁工程师"><el-input :model-value="bridge.bridge_engineer||'—'" disabled/></el-form-item>
           <el-form-item v-if="!isInitial" label="上次检查日期"><el-date-picker v-model="record.last_inspection_date" value-format="YYYY-MM-DD" type="date" style="width:100%" /></el-form-item>
           <el-form-item v-if="!isInitial" label="技术状况等级"><el-select v-model="record.rating_level_code" clearable style="width:100%"><el-option v-for="item in ratingLevels" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
           <el-form-item v-if="!isInitial" label="下次检查日期"><el-date-picker v-model="record.next_inspection_date" value-format="YYYY-MM-DD" type="date" style="width:100%" /></el-form-item>
@@ -146,10 +146,11 @@ function applyDefect(row) {
 }
 
 async function save(finalize) {
-  if (!selectedTaskId.value) return
-  saving.value = true
-  try {
-    const data = await http.post(`/inspection-workbench/${props.inspectionType}/tasks/${selectedTaskId.value}/${finalize ? 'submit' : 'draft'}`, { record, rows: rows.value })
+      if (!selectedTaskId.value) return
+      saving.value = true
+      try {
+        if (isInitial.value) record.bridge_engineer = bridge.bridge_engineer || ''
+        const data = await http.post(`/inspection-workbench/${props.inspectionType}/tasks/${selectedTaskId.value}/${finalize ? 'submit' : 'draft'}`, { record, rows: rows.value })
     ElMessage.success(finalize ? '检查记录已上传，病害记录已自动生成' : '检查填表草稿已保存')
     task.value = data.task; Object.keys(record).forEach(key => delete record[key]); Object.assign(record, data.record || {})
     rows.value = data.rows || rows.value

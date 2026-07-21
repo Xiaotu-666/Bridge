@@ -52,6 +52,30 @@ public class ReportActionController {
         return ApiResponse.ok(report);
     }
 
+    @PostMapping("/bridge-card/{bridgeCode}/initial")
+    @PreAuthorize("hasAnyAuthority('report-create') or hasRole('admin')")
+    public ApiResponse<Map<String, Object>> generateInitialRecord(@PathVariable String bridgeCode, HttpServletRequest request) {
+        Map<String, Object> report = reportService.generateInitialRecord(bridgeCode);
+        logService.log(request, "report", "新增", "tb_report", String.valueOf(report.get("report_id")), "生成初始检查记录表 PDF", true);
+        return ApiResponse.ok(report);
+    }
+
+    @PostMapping("/bridge-card/{bridgeCode}/periodic/{periodicCode}")
+    @PreAuthorize("hasAnyAuthority('report-create') or hasRole('admin')")
+    public ApiResponse<Map<String, Object>> generatePeriodicRecord(@PathVariable String bridgeCode, @PathVariable String periodicCode, HttpServletRequest request) {
+        Map<String, Object> report = reportService.generatePeriodicRecord(bridgeCode, periodicCode);
+        logService.log(request, "report", "新增", "tb_report", String.valueOf(report.get("report_id")), "生成定期检查记录表 PDF", true);
+        return ApiResponse.ok(report);
+    }
+
+    @PostMapping("/bridge-card/{bridgeCode}/summary")
+    @PreAuthorize("hasAnyAuthority('report-create') or hasRole('admin')")
+    public ApiResponse<Map<String, Object>> generateSummaryRecord(@PathVariable String bridgeCode, HttpServletRequest request) {
+        Map<String, Object> report = reportService.generateSummaryRecord(bridgeCode);
+        logService.log(request, "report", "新增", "tb_report", String.valueOf(report.get("report_id")), "生成检查趋势与对比 PDF", true);
+        return ApiResponse.ok(report);
+    }
+
     @GetMapping("/{reportId}/download")
     public ResponseEntity<Resource> download(@PathVariable String reportId) {
         Resource resource = reportService.loadReportFile(reportId);
